@@ -361,9 +361,11 @@ export const invoiceService = {
         return true;
       }
     } catch (shareErr: any) {
-      console.warn(
-        'Direct file sharing restricted or unavailable (e.g. Expo Go sandbox), opening system Print / Save as PDF:',
-        shareErr?.message || shareErr
+      // In Expo Go, scoped sandbox restricts sharing Print cache files directly,
+      // so it seamlessly opens the system Print / Save as PDF viewer.
+      // In the built APK, direct file sharing works natively.
+      console.log(
+        '[Invoice] Direct sharing restricted in Expo Go, opening system Print / Save as PDF.'
       );
     }
 
