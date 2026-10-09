@@ -5,8 +5,9 @@ import React, {
   useEffect,
   useCallback,
 } from 'react';
-import { readMe } from '@directus/sdk';
+import { readMe, updateMe } from '@directus/sdk';
 import { directus } from '../services/directus';
+import { notificationsService } from '../services/notifications';
 import { DirectusUser } from '../types';
 import { APP_CONFIG } from '../constants/config';
 
@@ -85,6 +86,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     checkSession();
   }, [checkSession]);
+
+  // Automatically register device push token in Directus user profile upon login
+  useEffect(() => {
+    if (isAuthenticated) {
+      notificationsService.getExpoPushToken().then((pushToken) => {
+        if (pushToken) {
+          directus
+            .request(updateMe({ push_token: pushToken } as any))
+            .catch(() => {});
+        }
+      });
+    }
+  }, [isAuthenticated]);
 
   /**
    * Login using Directus email & password
