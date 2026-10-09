@@ -54,13 +54,13 @@ A React Native & Expo mobile application designed for **Radical Engineering** st
 ## 📦 Getting Started
 
 ### 1. Environment Configuration
+
 The `.env` file is already preconfigured in the project root:
 
 ```env
-EXPO_PUBLIC_SITE_URL=https://radicalengineering.com.bd/
-EXPO_PUBLIC_API_URL=https://admin.atiar.com.bd/
-EXPO_PUBLIC_ASSETS_URL=https://admin.atiar.com.bd/assets/
-EXPO_PUBLIC_ACCESS_TOKEN=tlaoVoH-cJOVcNpAadhVFGQzHmAO3W5y
+EXPO_PUBLIC_SITE_URL=xxx
+EXPO_PUBLIC_API_URL=xxx
+EXPO_PUBLIC_ASSETS_URL=xxx
 ```
 
 ### 2. Run the App
@@ -116,4 +116,3 @@ pnpm web
         ├── AppNavigator.tsx    # Native Stack + Bottom Tabs
         └── types.ts            # Screen route parameter types
 ```
-

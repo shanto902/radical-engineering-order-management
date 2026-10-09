@@ -191,9 +191,9 @@ export const SettingsScreen: React.FC = () => {
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Token Configured:</Text>
+            <Text style={styles.infoLabel}>Session Status:</Text>
             <Text style={[styles.infoVal, { color: COLORS.delivered }]}>
-              ✓ Connected ({APP_CONFIG.accessToken ? 'Active' : 'Missing'})
+              ✓ Authenticated
             </Text>
           </View>
 

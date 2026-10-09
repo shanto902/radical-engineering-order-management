@@ -200,13 +200,14 @@ export const ordersApi = {
         url.searchParams.set('filter', JSON.stringify(filter));
       }
 
-      const token = (await directus.getToken()) || APP_CONFIG.accessToken;
-      const response = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-      });
+      const token = await directus.getToken();
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const response = await fetch(url.toString(), { headers });
 
       if (response.ok) {
         const json = await response.json();

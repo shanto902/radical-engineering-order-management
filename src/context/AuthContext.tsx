@@ -19,9 +19,6 @@ interface AuthContextType {
     email: string,
     password: string
   ) => Promise<{ success: boolean; error?: string }>;
-  loginWithToken: (
-    token: string
-  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -157,51 +154,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
-   * Login directly with static access token (e.g. from .env)
-   */
-  const loginWithToken = async (
-    token: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    try {
-      setLoading(true);
-      await directus.setToken(token.trim());
-
-      try {
-        const profile = await directus.request(
-          readMe({
-            fields: [
-              'id',
-              'first_name',
-              'last_name',
-              'email',
-              'avatar',
-              'role',
-            ] as any,
-          })
-        );
-        setUser(profile as unknown as DirectusUser);
-      } catch {
-        setUser({
-          id: 'staff-admin',
-          email: 'admin@radicalengineering.com.bd',
-          first_name: 'Radical',
-          last_name: 'Administrator',
-        });
-      }
-
-      setIsAuthenticated(true);
-      return { success: true };
-    } catch (err: any) {
-      return {
-        success: false,
-        error: err?.message || 'Failed to authenticate with token',
-      };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /**
    * Logout and clear Directus session
    */
   const logout = async (): Promise<void> => {
@@ -223,7 +175,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         isAuthenticated,
         loading,
         login,
-        loginWithToken,
         logout,
       }}
     >

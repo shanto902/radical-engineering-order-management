@@ -8,9 +8,6 @@ const rawAssetsUrl =
 
 const assetsBaseUrl = rawAssetsUrl.replace(/\/+$/, '');
 
-const accessToken =
-  process.env.EXPO_PUBLIC_ACCESS_TOKEN || 'tlaoVoH-cJOVcNpAadhVFGQzHmAO3W5y';
-
 export const APP_CONFIG = {
   companyName: 'Radical Engineering',
   tagline: 'Solar & Power Backup Solutions',
@@ -18,7 +15,6 @@ export const APP_CONFIG = {
     process.env.EXPO_PUBLIC_SITE_URL || 'https://radicalengineering.com.bd',
   apiBaseUrl,
   assetsBaseUrl,
-  accessToken,
   hotline1: '+880 1760195100',
   hotline1Raw: '+8801760195100',
   hotline2: '+880 1787224460',

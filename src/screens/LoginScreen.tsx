@@ -18,7 +18,7 @@ import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 export const LoginScreen: React.FC = () => {
-  const { login, loginWithToken, loading } = useAuth();
+  const { login, loading } = useAuth();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -42,19 +42,6 @@ export const LoginScreen: React.FC = () => {
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to connect to Directus.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleQuickTokenLogin = async () => {
-    try {
-      setSubmitting(true);
-      setErrorMessage(null);
-      const res = await loginWithToken(APP_CONFIG.accessToken);
-      if (!res.success) {
-        Alert.alert('Login Failed', res.error || 'Token rejected by Directus.');
-      }
     } finally {
       setSubmitting(false);
     }
@@ -182,25 +169,6 @@ export const LoginScreen: React.FC = () => {
                   />
                 </>
               )}
-            </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Quick Staff Token Login */}
-            <TouchableOpacity
-              style={styles.tokenLoginBtn}
-              onPress={handleQuickTokenLogin}
-              disabled={submitting || loading}
-            >
-              <Ionicons name="key-outline" size={16} color={COLORS.primary} />
-              <Text style={styles.tokenLoginBtnText}>
-                Sign In with Staff Access Token
-              </Text>
             </TouchableOpacity>
           </View>
 
@@ -347,36 +315,6 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: COLORS.white,
     fontSize: 15,
-    fontWeight: '700',
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: SPACING.md,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  dividerText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-    marginHorizontal: 10,
-  },
-  tokenLoginBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primaryLight,
-    paddingVertical: 12,
-    borderRadius: RADIUS.sm,
-    gap: 6,
-  },
-  tokenLoginBtnText: {
-    color: COLORS.primary,
-    fontSize: 13,
     fontWeight: '700',
   },
   footer: {
