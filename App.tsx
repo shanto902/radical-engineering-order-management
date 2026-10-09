@@ -19,6 +19,51 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 function MainApp() {
   const { activeNewOrderAlert, dismissNewOrderAlert } = useOrders();
 
+  useEffect(() => {
+    let responseSubscription: any = null;
+    try {
+      const Notifications = require('expo-notifications');
+      if (
+        Notifications &&
+        typeof Notifications.addNotificationResponseReceivedListener ===
+          'function'
+      ) {
+        // Handle user tapping on a push notification while the app is in background or foreground
+        responseSubscription =
+          Notifications.addNotificationResponseReceivedListener(
+            (response: any) => {
+              const data = response?.notification?.request?.content?.data;
+              const orderId = data?.orderId || data?.order_id || data?.id;
+              if (orderId) {
+                navigateToOrderDetail(String(orderId));
+              }
+            }
+          );
+
+        // Handle user tapping on a push notification that opened the app from a closed state
+        if (
+          typeof Notifications.getLastNotificationResponseAsync === 'function'
+        ) {
+          Notifications.getLastNotificationResponseAsync().then(
+            (response: any) => {
+              const data = response?.notification?.request?.content?.data;
+              const orderId = data?.orderId || data?.order_id || data?.id;
+              if (orderId) {
+                navigateToOrderDetail(String(orderId));
+              }
+            }
+          );
+        }
+      }
+    } catch {}
+
+    return () => {
+      if (responseSubscription?.remove) {
+        responseSubscription.remove();
+      }
+    };
+  }, []);
+
   return (
     <NavigationContainer ref={navigationRef}>
       <StatusBar style="dark" />

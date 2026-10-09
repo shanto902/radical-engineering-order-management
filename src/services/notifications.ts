@@ -13,9 +13,11 @@ try {
   ) {
     NotificationsModule.setNotificationHandler({
       handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
+        // Suppress system OS heads-up banners while the app is in the foreground
+        // to avoid duplicate popups (the custom in-app banner will display instead)
+        shouldShowAlert: false,
+        shouldShowBanner: false,
+        shouldShowList: false,
         shouldPlaySound: true,
         shouldSetBadge: true,
       }),
