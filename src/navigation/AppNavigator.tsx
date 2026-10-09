@@ -115,7 +115,7 @@ export function AppNavigator() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Authenticating with Directus...</Text>
+        <Text style={styles.loadingText}>Checking session...</Text>
       </View>
     );
   }

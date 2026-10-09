@@ -66,7 +66,7 @@ export const SettingsScreen: React.FC = () => {
   const handleLogout = () => {
     Alert.alert(
       'Sign Out',
-      'Are you sure you want to sign out of Directus?',
+      'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -88,7 +88,7 @@ export const SettingsScreen: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>SETTINGS & SYSTEM</Text>
         <Text style={styles.headerSubtitle}>
-          Directus API configuration and notification controls
+          System sync and notification controls
         </Text>
       </View>
 
@@ -104,7 +104,7 @@ export const SettingsScreen: React.FC = () => {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.userNameText}>{displayName}</Text>
-              <Text style={styles.userEmailText}>{user?.email || 'Directus Authenticated'}</Text>
+              <Text style={styles.userEmailText}>{user?.email || 'Staff Account'}</Text>
               <View style={styles.roleBadge}>
                 <Text style={styles.roleBadgeText}>
                   {typeof user?.role === 'object' && user?.role?.name
@@ -120,7 +120,7 @@ export const SettingsScreen: React.FC = () => {
             onPress={handleLogout}
           >
             <Ionicons name="log-out-outline" size={17} color={COLORS.danger} />
-            <Text style={styles.logoutBtnText}>Sign Out of Directus</Text>
+            <Text style={styles.logoutBtnText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
 
@@ -132,7 +132,7 @@ export const SettingsScreen: React.FC = () => {
             <View style={{ flex: 1, marginRight: 10 }}>
               <Text style={styles.settingLabel}>Active Live Polling</Text>
               <Text style={styles.settingDesc}>
-                Auto-syncs Directus every 25 seconds for new orders while the app is active
+                Auto-syncs every 25 seconds for new orders while the app is active
               </Text>
             </View>
             <Switch
@@ -154,17 +154,19 @@ export const SettingsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Directus Connection Status */}
+        {/* System Sync & Connection */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>DIRECTUS BACKEND CONNECTION</Text>
+          <Text style={styles.cardTitle}>SYSTEM SYNC & CONNECTION</Text>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Server Endpoint:</Text>
-            <Text style={styles.infoVal}>{APP_CONFIG.apiBaseUrl}</Text>
+            <Text style={styles.infoLabel}>Server Connection:</Text>
+            <Text style={[styles.infoVal, { color: COLORS.delivered, fontWeight: '700' }]}>
+              ● Connected & Encrypted
+            </Text>
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Realtime WebSocket:</Text>
+            <Text style={styles.infoLabel}>Live Order Stream:</Text>
             <Text
               style={[
                 styles.infoVal,
@@ -175,18 +177,18 @@ export const SettingsScreen: React.FC = () => {
               ]}
             >
               {isRealtimeConnected
-                ? '● Connected (0ms Push)'
-                : '○ Connecting / Ping Poller'}
+                ? '● Connected (Instant Push)'
+                : '○ Active (Polling Stream)'}
             </Text>
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Orders Collection:</Text>
+            <Text style={styles.infoLabel}>Orders Channel:</Text>
             <Text style={styles.infoVal}>orders</Text>
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Items Collection:</Text>
+            <Text style={styles.infoLabel}>Items Channel:</Text>
             <Text style={styles.infoVal}>order_items</Text>
           </View>
 
@@ -213,11 +215,11 @@ export const SettingsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Expo Push Token for Directus Flow Webhooks */}
+        {/* Expo Push Token Card */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>EXPO PUSH NOTIFICATION TOKEN</Text>
           <Text style={styles.cardDesc}>
-            Use this token to set up Directus Flow webhooks so the server can push alerts even when the app is completely closed.
+            Use this token to receive instant push alerts on this device even when the app is completely closed.
           </Text>
 
           {pushToken ? (

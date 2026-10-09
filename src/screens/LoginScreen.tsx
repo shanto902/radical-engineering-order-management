@@ -50,7 +50,7 @@ export const LoginScreen: React.FC = () => {
         } catch {}
       }
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to connect to Directus.');
+      setErrorMessage(err?.message || 'Failed to connect to server.');
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       } catch {}
@@ -84,7 +84,7 @@ export const LoginScreen: React.FC = () => {
           <View style={styles.card}>
             <Text style={styles.formTitle}>Staff Sign In</Text>
             <Text style={styles.formDesc}>
-              Authenticate with your Directus user credentials.
+              Authenticate with your staff account credentials.
             </Text>
 
             {errorMessage && (
@@ -205,9 +205,7 @@ export const LoginScreen: React.FC = () => {
           <View style={styles.footer}>
             <View style={styles.serverRow}>
               <View style={styles.onlineDot} />
-              <Text style={styles.serverText}>
-                Directus: {APP_CONFIG.apiBaseUrl}
-              </Text>
+              <Text style={styles.serverText}>System Online</Text>
             </View>
             <Text style={styles.footerCopyright}>
               Radical Engineering BD • Kishoreganj

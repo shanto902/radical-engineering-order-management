@@ -122,7 +122,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       isFirstLoadRef.current = false;
     } catch (err: any) {
       console.warn('Orders load failed:', err);
-      setError(err?.message || 'Failed to sync orders from Directus');
+      setError(err?.message || 'Failed to sync orders');
     } finally {
       setLoading(false);
       setRefreshing(false);

@@ -269,7 +269,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
       {loading && !refreshing ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Loading orders from Directus...</Text>
+          <Text style={styles.loadingText}>Loading orders...</Text>
         </View>
       ) : error ? (
         <View style={styles.centerContainer}>

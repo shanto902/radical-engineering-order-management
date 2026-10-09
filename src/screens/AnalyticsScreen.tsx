@@ -32,7 +32,7 @@ export const AnalyticsScreen: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>ORDER ANALYTICS</Text>
         <Text style={styles.headerSubtitle}>
-          Real-time summary from Directus database
+          Real-time sales & order performance
         </Text>
       </View>
 

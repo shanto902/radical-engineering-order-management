@@ -84,7 +84,7 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
       await onSave(chargesList, calculatedGrandTotal);
       onClose();
     } catch {
-      Alert.alert('Error', 'Failed to update extra charges in Directus');
+      Alert.alert('Error', 'Failed to update extra charges');
     } finally {
       setSaving(false);
     }
@@ -179,7 +179,7 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
                 disabled={saving}
               >
                 <Text style={styles.saveBtnText}>
-                  {saving ? 'Updating Directus...' : 'Save & Update Total'}
+                  {saving ? 'Saving...' : 'Save & Update Total'}
                 </Text>
               </TouchableOpacity>
             </View>
