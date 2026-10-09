@@ -7,7 +7,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   TouchableWithoutFeedback,
+  ScrollView,
+  Platform,
+  Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Order, OrderStatus } from '../types';
 import { STATUS_MAP, COLORS, RADIUS, SPACING } from '../constants/theme';
@@ -34,29 +38,49 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
   onClose,
   onSelectStatus,
 }) => {
+  const insets = useSafeAreaInsets();
   const [updating, setUpdating] = useState<boolean>(false);
   const [selectedKey, setSelectedKey] = useState<OrderStatus | null>(null);
 
   if (!order) return null;
 
   const currentStatus = order.status;
+  const grandTotal = Number(order.total || 0).toLocaleString();
 
-  const handleSelect = async (status: OrderStatus) => {
+  const handleSelect = (status: OrderStatus) => {
     if (status === currentStatus) {
       onClose();
       return;
     }
 
-    try {
-      setSelectedKey(status);
-      setUpdating(true);
-      await onSelectStatus(status);
-      onClose();
-    } finally {
-      setUpdating(false);
-      setSelectedKey(null);
-    }
+    const currentConf = STATUS_MAP[currentStatus] || { label: currentStatus };
+    const targetConf = STATUS_MAP[status] || { label: status };
+
+    Alert.alert(
+      'Confirm Status Change',
+      `Are you sure you want to change Order #${order.order_id || order.id} from "${currentConf.label}" to "${targetConf.label}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          style: status === 'cancelled' ? 'destructive' : 'default',
+          onPress: async () => {
+            try {
+              setSelectedKey(status);
+              setUpdating(true);
+              await onSelectStatus(status);
+              onClose();
+            } finally {
+              setUpdating(false);
+              setSelectedKey(null);
+            }
+          },
+        },
+      ]
+    );
   };
+
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 16) + SPACING.md;
 
   return (
     <Modal
@@ -68,22 +92,36 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={styles.container}>
-              {/* Header */}
+            <View style={[styles.container, { paddingBottom: bottomPadding }]}>
+              {/* Header with Grand Total */}
               <View style={styles.header}>
-                <View>
-                  <Text style={styles.title}>Update Order Status</Text>
-                  <Text style={styles.subtitle}>
-                    Order #{order.order_id || order.id} • {order.name}
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <View style={styles.headerTitleRow}>
+                    <Text style={styles.title}>Update Order Status</Text>
+                    <View style={styles.totalBadge}>
+                      <Text style={styles.totalBadgeText}>৳{grandTotal}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.subtitle} numberOfLines={1}>
+                    Order #{order.order_id || order.id} • {order.name || 'Customer'}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={onClose} disabled={updating}>
+                <TouchableOpacity
+                  onPress={onClose}
+                  disabled={updating}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
                   <Ionicons name="close" size={24} color={COLORS.textSecondary} />
                 </TouchableOpacity>
               </View>
 
-              {/* Status List */}
-              <View style={styles.optionsList}>
+              {/* Scrollable Status List */}
+              <ScrollView
+                style={styles.optionsScrollView}
+                contentContainerStyle={styles.optionsList}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+              >
                 {STATUS_OPTIONS.map((st) => {
                   const conf = STATUS_MAP[st];
                   const isCurrent = currentStatus === st;
@@ -139,7 +177,7 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
                     </TouchableOpacity>
                   );
                 })}
-              </View>
+              </ScrollView>
             </View>
           </TouchableWithoutFeedback>
         </View>
@@ -158,8 +196,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderTopLeftRadius: RADIUS.lg,
     borderTopRightRadius: RADIUS.lg,
-    padding: SPACING.lg,
-    paddingBottom: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    maxHeight: '88%',
   },
   header: {
     flexDirection: 'row',
@@ -170,19 +209,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
   title: {
     fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  totalBadge: {
+    backgroundColor: COLORS.surfaceVariant,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.xs,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
+  },
+  totalBadgeText: {
+    fontSize: 12,
     fontWeight: '800',
     color: COLORS.primary,
   },
   subtitle: {
     fontSize: 12,
     color: COLORS.textSecondary,
-    marginTop: 2,
+    marginTop: 4,
+  },
+  optionsScrollView: {
+    maxHeight: 380,
   },
   optionsList: {
     gap: 10,
-    marginTop: 6,
+    paddingVertical: 4,
   },
   optionItem: {
     flexDirection: 'row',

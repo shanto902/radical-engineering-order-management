@@ -10,16 +10,19 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
 import { OrderCard } from '../components/OrderCard';
 import { StatusChangeModal } from '../components/StatusChangeModal';
 import { invoiceService } from '../services/invoiceService';
 import { ordersApi } from '../services/ordersApi';
 import { Order, FilterStatus, OrderStatus } from '../types';
-import { COLORS, RADIUS, SPACING } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, STATUS_MAP } from '../constants/theme';
 
 const STATUS_FILTERS: { key: FilterStatus; label: string; countKey?: string }[] = [
   { key: 'all', label: 'All' },
@@ -54,6 +57,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
   const [selectedOrderForStatus, setSelectedOrderForStatus] =
     useState<Order | null>(null);
   const [sharingOrderId, setSharingOrderId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleOpenStatusModal = (order: Order) => {
     setSelectedOrderForStatus(order);
@@ -61,8 +65,19 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
 
   const handleUpdateStatus = async (newStatus: OrderStatus) => {
     if (!selectedOrderForStatus) return;
+    const orderNum = selectedOrderForStatus.order_id || selectedOrderForStatus.id;
+    const targetLabel = STATUS_MAP[newStatus]?.label || newStatus;
+
     const success = await updateStatus(selectedOrderForStatus.id, newStatus);
-    if (!success) {
+    if (success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const msg = `✓ Order #${orderNum} status updated to ${targetLabel}`;
+      if (Platform.OS === 'android') {
+        ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.BOTTOM);
+      }
+      setToastMessage(msg);
+      setTimeout(() => setToastMessage(null), 3000);
+    } else {
       Alert.alert('Error', 'Failed to update order status');
     }
   };
@@ -152,6 +167,14 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
       </View>
 
       <View style={styles.bodyContainer}>
+        {/* Success Feedback Toast */}
+        {toastMessage && (
+          <View style={styles.toastBanner}>
+            <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </View>
+        )}
+
         {/* Metrics Banner */}
         <View style={styles.metricsContainer}>
         <View style={styles.metricCard}>
@@ -530,6 +553,31 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 4,
     textAlign: 'center',
+  },
+  toastBanner: {
+    position: 'absolute',
+    top: 10,
+    left: SPACING.md,
+    right: SPACING.md,
+    backgroundColor: '#065F46',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
+    zIndex: 9999,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    gap: 8,
+  },
+  toastText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
   },
 });
 

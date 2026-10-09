@@ -9,10 +9,13 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatusChangeModal } from '../components/StatusChangeModal';
@@ -20,7 +23,7 @@ import { ExtraChargesModal } from '../components/ExtraChargesModal';
 import { invoiceService } from '../services/invoiceService';
 import { OrderStatus, ExtraCharge } from '../types';
 import { APP_CONFIG } from '../constants/config';
-import { COLORS, RADIUS, SPACING } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, STATUS_MAP } from '../constants/theme';
 
 export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   route,
@@ -34,6 +37,7 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const order = orders.find((o) => o.id === orderId);
 
@@ -85,8 +89,19 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   };
 
   const handleUpdateStatus = async (newStatus: OrderStatus) => {
+    const orderNum = order.order_id || order.id;
+    const targetLabel = STATUS_MAP[newStatus]?.label || newStatus;
+
     const ok = await updateStatus(order.id, newStatus);
-    if (!ok) {
+    if (ok) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const msg = `✓ Order #${orderNum} status updated to ${targetLabel}`;
+      if (Platform.OS === 'android') {
+        ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.BOTTOM);
+      }
+      setToastMessage(msg);
+      setTimeout(() => setToastMessage(null), 3000);
+    } else {
       Alert.alert('Error', 'Failed to update status');
     }
   };
@@ -96,7 +111,15 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     newTotal: number
   ) => {
     const ok = await updateExtraCharges(order.id, charges, newTotal);
-    if (!ok) {
+    if (ok) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      const msg = `✓ Extra charges updated! Grand total: ৳${newTotal.toLocaleString()}`;
+      if (Platform.OS === 'android') {
+        ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.BOTTOM);
+      }
+      setToastMessage(msg);
+      setTimeout(() => setToastMessage(null), 3000);
+    } else {
       Alert.alert('Error', 'Failed to update extra charges');
     }
   };
@@ -187,6 +210,14 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Success Feedback Toast */}
+      {toastMessage && (
+        <View style={styles.toastBanner}>
+          <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Status Header Bar */}
@@ -766,6 +797,31 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: COLORS.white,
     fontWeight: '700',
+  },
+  toastBanner: {
+    position: 'absolute',
+    top: 56,
+    left: SPACING.md,
+    right: SPACING.md,
+    backgroundColor: '#065F46',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
+    zIndex: 9999,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    gap: 8,
+  },
+  toastText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
   },
 });
 

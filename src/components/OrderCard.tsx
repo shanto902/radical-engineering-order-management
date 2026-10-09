@@ -132,9 +132,16 @@ export const OrderCard: React.FC<OrderCardProps> = ({
 
       {/* Bottom Footer: Total + Action Buttons (Unnested for instant responsiveness) */}
       <View style={styles.footerRow}>
-        <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
-          <Text style={styles.totalLabel}>Total Amount</Text>
-          <Text style={styles.totalAmount}>৳{totalAmount}</Text>
+        <TouchableOpacity activeOpacity={0.85} onPress={onPress} style={styles.totalBox}>
+          <Text style={styles.totalLabel}>Grand Total</Text>
+          <Text
+            style={styles.totalAmount}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+          >
+            ৳{totalAmount}
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.actionsGroup}>
@@ -145,7 +152,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             accessibilityLabel="Call Customer"
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="call" size={16} color={COLORS.delivered} />
+            <Ionicons name="call" size={15} color={COLORS.delivered} />
           </TouchableOpacity>
 
           {/* Quick WhatsApp */}
@@ -155,7 +162,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             accessibilityLabel="WhatsApp Customer"
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="logo-whatsapp" size={17} color="#25D366" />
+            <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
           </TouchableOpacity>
 
           {/* Quick Invoice */}
@@ -169,7 +176,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             {isSharingInvoice ? (
               <ActivityIndicator size="small" color={COLORS.accent} />
             ) : (
-              <Ionicons name="document-text-outline" size={17} color={COLORS.accent} />
+              <Ionicons name="document-text-outline" size={16} color={COLORS.accent} />
             )}
           </TouchableOpacity>
 
@@ -180,7 +187,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
             <Text style={styles.statusChangeBtnText}>Update</Text>
-            <Ionicons name="chevron-forward" size={13} color={COLORS.white} />
+            <Ionicons name="chevron-forward" size={12} color={COLORS.white} />
           </TouchableOpacity>
         </View>
       </View>
@@ -277,31 +284,40 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     marginTop: SPACING.md,
     paddingTop: SPACING.sm,
     borderTopWidth: 1,
     borderTopColor: COLORS.surfaceVariant,
+    gap: 8,
+  },
+  totalBox: {
+    flex: 1,
+    minWidth: 85,
+    justifyContent: 'center',
   },
   totalLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: COLORS.textMuted,
     textTransform: 'uppercase',
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   totalAmount: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: COLORS.primary,
+    marginTop: 1,
   },
   actionsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   iconButton: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.surfaceVariant,
     justifyContent: 'center',
@@ -311,14 +327,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
     borderRadius: RADIUS.sm,
     gap: 3,
   },
   statusChangeBtnText: {
     color: COLORS.white,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
 });
