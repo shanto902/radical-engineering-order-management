@@ -43,6 +43,7 @@ interface OrdersContextType {
   clearUnreadCount: () => void;
   isPollingEnabled: boolean;
   togglePolling: () => void;
+  isRealtimeConnected: boolean;
   activeNewOrderAlert: Order | null;
   dismissNewOrderAlert: () => void;
   triggerDemoAlert: (order: Order) => void;
@@ -64,6 +65,8 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [unreadNewOrders, setUnreadNewOrders] = useState<number>(0);
   const [isPollingEnabled, setIsPollingEnabled] = useState<boolean>(true);
+  const [isRealtimeConnected, setIsRealtimeConnected] =
+    useState<boolean>(false);
   const [activeNewOrderAlert, setActiveNewOrderAlert] =
     useState<Order | null>(null);
 
@@ -205,20 +208,24 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
           },
         });
         unsubscribeFn = result.unsubscribe;
+        if (isMounted) setIsRealtimeConnected(true);
 
         for await (const message of result.subscription) {
           if (!isMounted) break;
           const ev = message as any;
           if (ev.event === 'create' && ev.data && ev.data.length > 0) {
             const newOrder = ev.data[0];
+            lastKnownLatestIdRef.current = newOrder.id;
             notificationsService.notifyNewOrder(newOrder as any);
             setActiveNewOrderAlert(newOrder as any);
             setUnreadNewOrders((prev) => prev + 1);
             loadOrders();
+          } else if (ev.event === 'update' && ev.data && ev.data.length > 0) {
+            loadOrders();
           }
         }
       } catch (err) {
-        // Silently fall back to lightweight ping poller when WebSockets are disabled on server
+        if (isMounted) setIsRealtimeConnected(false);
       }
     };
 
@@ -226,6 +233,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
 
     return () => {
       isMounted = false;
+      setIsRealtimeConnected(false);
       if (unsubscribeFn) {
         try {
           unsubscribeFn();
@@ -355,6 +363,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         clearUnreadCount,
         isPollingEnabled,
         togglePolling,
+        isRealtimeConnected,
         activeNewOrderAlert,
         dismissNewOrderAlert: () => setActiveNewOrderAlert(null),
         triggerDemoAlert: (order: Order) => {

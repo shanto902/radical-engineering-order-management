@@ -49,4 +49,13 @@ export const directus = createDirectus(APP_CONFIG.apiBaseUrl)
     })
   )
   .with(rest())
-  .with(realtime());
+  .with(
+    realtime({
+      authMode: 'handshake',
+      heartbeat: true,
+      reconnect: {
+        delay: 2000,
+        retries: 50,
+      },
+    })
+  );

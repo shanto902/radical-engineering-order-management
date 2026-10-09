@@ -21,6 +21,7 @@ export const SettingsScreen: React.FC = () => {
   const {
     isPollingEnabled,
     togglePolling,
+    isRealtimeConnected,
     lastSynced,
     refreshOrders,
     triggerDemoAlert,
@@ -160,6 +161,23 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Server Endpoint:</Text>
             <Text style={styles.infoVal}>{APP_CONFIG.apiBaseUrl}</Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Realtime WebSocket:</Text>
+            <Text
+              style={[
+                styles.infoVal,
+                {
+                  color: isRealtimeConnected ? COLORS.delivered : COLORS.warning,
+                  fontWeight: '700',
+                },
+              ]}
+            >
+              {isRealtimeConnected
+                ? '● Connected (0ms Push)'
+                : '○ Connecting / Ping Poller'}
+            </Text>
           </View>
 
           <View style={styles.infoRow}>
