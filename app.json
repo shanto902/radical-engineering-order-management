@@ -35,7 +35,11 @@
       "package": "com.radicalengineering.orders",
       "googleServicesFile": "./google-services.json",
       "versionCode": 1,
-      "permissions": ["INTERNET", "VIBRATE", "RECEIVE_BOOT_COMPLETED"]
+      "permissions": [
+        "INTERNET",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -44,8 +48,9 @@
     "scheme": "radicalorders",
     "extra": {
       "eas": {
-        "projectId": "6a901469-f3e4-46be-a5c0-357a75505d03"
+        "projectId": "8d4c18c5-5582-409e-911d-a06308c0fb1a"
       }
-    }
+    },
+    "owner": "ashik-shanto"
   }
 }
