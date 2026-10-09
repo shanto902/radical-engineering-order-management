@@ -53,7 +53,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
 
   const [selectedOrderForStatus, setSelectedOrderForStatus] =
     useState<Order | null>(null);
-  const [sharingInvoice, setSharingInvoice] = useState<boolean>(false);
+  const [sharingOrderId, setSharingOrderId] = useState<string | null>(null);
 
   const handleOpenStatusModal = (order: Order) => {
     setSelectedOrderForStatus(order);
@@ -68,7 +68,8 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
   };
 
   const handleShareInvoice = async (order: Order) => {
-    setSharingInvoice(true);
+    if (sharingOrderId) return;
+    setSharingOrderId(order.id);
     try {
       let targetOrder = order;
       if (!order.order_items || order.order_items.length === 0) {
@@ -79,7 +80,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
     } catch (err: any) {
       Alert.alert('Invoice Error', err?.message || 'Could not generate invoice PDF');
     } finally {
-      setSharingInvoice(false);
+      setSharingOrderId(null);
     }
   };
 
@@ -280,6 +281,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
               }
               onChangeStatusPress={() => handleOpenStatusModal(item)}
               onInvoicePress={() => handleShareInvoice(item)}
+              isSharingInvoice={sharingOrderId === item.id}
             />
           )}
           ListEmptyComponent={

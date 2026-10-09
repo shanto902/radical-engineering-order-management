@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -18,6 +19,7 @@ interface OrderCardProps {
   onPress: () => void;
   onChangeStatusPress: () => void;
   onInvoicePress: () => void;
+  isSharingInvoice?: boolean;
 }
 
 export const OrderCard: React.FC<OrderCardProps> = ({
@@ -25,6 +27,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   onPress,
   onChangeStatusPress,
   onInvoicePress,
+  isSharingInvoice = false,
 }) => {
   const itemsCount = order.order_items?.length || 0;
   const totalAmount = Number(order.total || 0).toLocaleString();
@@ -61,7 +64,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
       intlPhone = '88' + intlPhone;
     }
     const message = encodeURIComponent(
-      `Hello ${order.name}, thank you for your order #${order.order_id} at Radical Engineering!`
+      `Hello ${order.name}, thank you for your order #${order.order_id || order.id} at Radical Engineering! Total: ৳${totalAmount}.`
     );
     Linking.openURL(`whatsapp://send?phone=${intlPhone}&text=${message}`).catch(() => {
       Linking.openURL(`https://wa.me/${intlPhone}?text=${message}`);
@@ -140,6 +143,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             style={styles.iconButton}
             onPress={handleCall}
             accessibilityLabel="Call Customer"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="call" size={16} color={COLORS.delivered} />
           </TouchableOpacity>
@@ -149,6 +153,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
             style={styles.iconButton}
             onPress={handleWhatsApp}
             accessibilityLabel="WhatsApp Customer"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="logo-whatsapp" size={17} color="#25D366" />
           </TouchableOpacity>
@@ -157,15 +162,22 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           <TouchableOpacity
             style={styles.iconButton}
             onPress={onInvoicePress}
+            disabled={isSharingInvoice}
             accessibilityLabel="Generate Invoice"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="document-text-outline" size={17} color={COLORS.accent} />
+            {isSharingInvoice ? (
+              <ActivityIndicator size="small" color={COLORS.accent} />
+            ) : (
+              <Ionicons name="document-text-outline" size={17} color={COLORS.accent} />
+            )}
           </TouchableOpacity>
 
           {/* Change Status */}
           <TouchableOpacity
             style={styles.statusChangeBtn}
             onPress={onChangeStatusPress}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
             <Text style={styles.statusChangeBtnText}>Update</Text>
             <Ionicons name="chevron-forward" size={13} color={COLORS.white} />

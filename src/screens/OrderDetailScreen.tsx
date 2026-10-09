@@ -67,7 +67,7 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       intlPhone = '88' + intlPhone;
     }
     const message = encodeURIComponent(
-      `Hello ${order.name}, regarding your order #${order.order_id} at Radical Engineering...`
+      `Hello ${order.name}, regarding your order #${order.order_id || order.id} at Radical Engineering (Total: ৳${Number(order.total || 0).toLocaleString()})...`
     );
     Linking.openURL(`whatsapp://send?phone=${intlPhone}&text=${message}`).catch(() => {
       Linking.openURL(`https://wa.me/${intlPhone}?text=${message}`);

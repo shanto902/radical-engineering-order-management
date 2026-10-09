@@ -339,28 +339,43 @@ export const invoiceService = {
 
   /**
    * Generates PDF and opens the native OS Share dialog (WhatsApp, email, drive)
-   * With automatic fallback to print preview if sharing is unavailable
+   * With automatic fallback to system Print / Save as PDF if direct file sharing is restricted (e.g. Expo Go sandbox)
    */
   async shareInvoice(order: Order): Promise<boolean> {
-    try {
-      const pdfUri = await this.generatePdf(order);
-      const isAvailable = await Sharing.isAvailableAsync().catch(() => false);
+    const html = this.buildInvoiceHtml(order);
 
+    // 1. Attempt native file sharing (works on standalone APK build)
+    try {
+      const isAvailable = await Sharing.isAvailableAsync().catch(() => false);
       if (isAvailable) {
-        await Sharing.shareAsync(pdfUri, {
+        const { uri } = await Print.printToFileAsync({
+          html,
+          base64: false,
+        });
+
+        await Sharing.shareAsync(uri, {
           UTI: 'com.adobe.pdf',
           mimeType: 'application/pdf',
           dialogTitle: `Radical Engineering Invoice #${order.order_id || order.id}`,
         });
         return true;
-      } else {
-        // Fallback for devices without native share sheet: open print/preview
-        await Print.printAsync({ uri: pdfUri });
-        return true;
       }
-    } catch (err: any) {
-      console.error('Failed to share invoice:', err);
-      throw new Error(err?.message || 'Failed to generate or share invoice PDF');
+    } catch (shareErr: any) {
+      console.warn(
+        'Direct file sharing restricted or unavailable (e.g. Expo Go sandbox), opening system Print / Save as PDF:',
+        shareErr?.message || shareErr
+      );
+    }
+
+    // 2. Reliable Fallback: Open system Print / Save as PDF preview dialog
+    try {
+      await Print.printAsync({ html });
+      return true;
+    } catch (printErr: any) {
+      console.error('Print preview fallback failed:', printErr);
+      throw new Error(
+        printErr?.message || 'Could not open invoice preview on this device'
+      );
     }
   },
 };
