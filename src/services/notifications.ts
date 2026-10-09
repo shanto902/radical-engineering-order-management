@@ -14,6 +14,8 @@ try {
     NotificationsModule.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
         shouldPlaySound: true,
         shouldSetBadge: true,
       }),
@@ -42,9 +44,14 @@ export const notificationsService = {
         Platform.OS === 'android' &&
         NotificationsModule?.setNotificationChannelAsync
       ) {
+        const importance =
+          NotificationsModule.AndroidImportance?.MAX ??
+          NotificationsModule.AndroidImportance?.HIGH ??
+          5;
+
         await NotificationsModule.setNotificationChannelAsync('orders', {
           name: 'Order Alerts',
-          importance: NotificationsModule.AndroidImportance.MAX,
+          importance,
           vibrationPattern: [0, 300, 150, 300],
           lightColor: '#FCB974',
           sound: 'default',

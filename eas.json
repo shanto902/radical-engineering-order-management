@@ -12,6 +12,12 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://admin.atiar.com.bd",
+        "EXPO_PUBLIC_ASSETS_URL": "https://admin.atiar.com.bd/assets",
+        "EXPO_PUBLIC_SITE_URL": "https://radicalengineering.com.bd",
+        "EXPO_PUBLIC_ACCESS_TOKEN": "tlaoVoH-cJOVcNpAadhVFGQzHmAO3W5y"
       }
     },
     "production": {

@@ -11,6 +11,7 @@ import {
   navigateToOrderDetail,
 } from './src/navigation/navigationRef';
 import { NewOrderAlertBanner } from './src/components/NewOrderAlertBanner';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
 // Keep splash screen visible until initial setup completes
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -45,12 +46,14 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <OrdersProvider>
-          <MainApp />
-        </OrdersProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <OrdersProvider>
+            <MainApp />
+          </OrdersProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
