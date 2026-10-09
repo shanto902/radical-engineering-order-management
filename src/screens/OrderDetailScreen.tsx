@@ -105,8 +105,8 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     try {
       setIsGeneratingPdf(true);
       await invoiceService.shareInvoice(order);
-    } catch {
-      Alert.alert('Error', 'Failed to create invoice PDF');
+    } catch (err: any) {
+      Alert.alert('Invoice Error', err?.message || 'Failed to create invoice PDF');
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -116,23 +116,48 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     try {
       setIsPrinting(true);
       await invoiceService.printDirect(order);
-    } catch {
-      Alert.alert('Error', 'Failed to send invoice to printer');
+    } catch (err: any) {
+      Alert.alert('Print Error', err?.message || 'Failed to send invoice to printer');
     } finally {
       setIsPrinting(false);
     }
   };
 
-  // Calculations
-  const itemsSubtotal = (order.order_items || []).reduce((sum, item) => {
+  // Safe Calculations
+  const rawOrderItems = Array.isArray(order.order_items)
+    ? order.order_items
+    : typeof order.order_items === 'string' && (order.order_items as string).trim()
+    ? (() => {
+        try {
+          return JSON.parse(order.order_items as string);
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  const itemsSubtotal = rawOrderItems.reduce((sum: number, item: any) => {
     const price = item.product?.discounted_price
       ? Number(item.product.discounted_price)
-      : Number(item.product?.price || 0);
-    return sum + price * (item.quantity || 1);
+      : Number(item.product?.price || item.price || 0);
+    return sum + (isNaN(price) ? 0 : price) * Number(item.quantity || 1);
   }, 0);
 
-  const extraChargesSum = (order.extra_charges || []).reduce(
-    (sum, ch) => sum + Number(ch.cost || 0),
+  const rawExtraCharges: ExtraCharge[] = Array.isArray(order.extra_charges)
+    ? order.extra_charges
+    : typeof order.extra_charges === 'string' &&
+      (order.extra_charges as string).trim()
+    ? (() => {
+        try {
+          return JSON.parse(order.extra_charges as string);
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  const extraChargesSum = rawExtraCharges.reduce(
+    (sum: number, ch: any) => sum + (Number(ch.cost || 0) || 0),
     0
   );
 

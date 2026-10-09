@@ -73,64 +73,66 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   };
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      style={styles.card}
-      onPress={onPress}
-    >
-      {/* Top Header */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          style={styles.orderIdContainer}
-          onPress={handleCopyOrderId}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.orderIdText}>#{order.order_id || order.id}</Text>
-          <Ionicons
-            name="copy-outline"
-            size={13}
-            color={COLORS.textSecondary}
-            style={styles.copyIcon}
-          />
-        </TouchableOpacity>
-        <StatusBadge status={order.status} size="sm" />
-      </View>
-
-      {/* Customer Information */}
-      <View style={styles.customerSection}>
-        <View style={styles.customerNameRow}>
-          <Ionicons name="person" size={15} color={COLORS.primary} />
-          <Text style={styles.customerName}>{order.name || 'Customer'}</Text>
+    <View style={styles.card}>
+      {/* Clickable Card Body */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPress}
+      >
+        {/* Top Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            style={styles.orderIdContainer}
+            onPress={handleCopyOrderId}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.orderIdText}>#{order.order_id || order.id}</Text>
+            <Ionicons
+              name="copy-outline"
+              size={13}
+              color={COLORS.textSecondary}
+              style={styles.copyIcon}
+            />
+          </TouchableOpacity>
+          <StatusBadge status={order.status} size="sm" />
         </View>
 
-        <View style={styles.metaRow}>
-          <Ionicons name="location-outline" size={14} color={COLORS.textSecondary} />
-          <Text style={styles.addressText} numberOfLines={1}>
-            {order.address || 'Address not specified'}
+        {/* Customer Information */}
+        <View style={styles.customerSection}>
+          <View style={styles.customerNameRow}>
+            <Ionicons name="person" size={15} color={COLORS.primary} />
+            <Text style={styles.customerName}>{order.name || 'Customer'}</Text>
+          </View>
+
+          <View style={styles.metaRow}>
+            <Ionicons name="location-outline" size={14} color={COLORS.textSecondary} />
+            <Text style={styles.addressText} numberOfLines={1}>
+              {order.address || 'Address not specified'}
+            </Text>
+          </View>
+
+          <View style={styles.metaRow}>
+            <Ionicons name="time-outline" size={13} color={COLORS.textMuted} />
+            <Text style={styles.dateText}>{dateFormatted}</Text>
+          </View>
+        </View>
+
+        {/* Items Preview */}
+        <View style={styles.itemsBox}>
+          <Ionicons name="cube-outline" size={14} color={COLORS.accent} />
+          <Text style={styles.itemsText} numberOfLines={1}>
+            {itemsPreview || 'Order details'}
+            {remainingItemsCount > 0 && ` +${remainingItemsCount} more`}
           </Text>
         </View>
+      </TouchableOpacity>
 
-        <View style={styles.metaRow}>
-          <Ionicons name="time-outline" size={13} color={COLORS.textMuted} />
-          <Text style={styles.dateText}>{dateFormatted}</Text>
-        </View>
-      </View>
-
-      {/* Items Preview */}
-      <View style={styles.itemsBox}>
-        <Ionicons name="cube-outline" size={14} color={COLORS.accent} />
-        <Text style={styles.itemsText} numberOfLines={1}>
-          {itemsPreview || 'Order details'}
-          {remainingItemsCount > 0 && ` +${remainingItemsCount} more`}
-        </Text>
-      </View>
-
-      {/* Bottom Footer: Total + Actions */}
+      {/* Bottom Footer: Total + Action Buttons (Unnested for instant responsiveness) */}
       <View style={styles.footerRow}>
-        <View>
+        <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
           <Text style={styles.totalLabel}>Total Amount</Text>
           <Text style={styles.totalAmount}>৳{totalAmount}</Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.actionsGroup}>
           {/* Quick Call */}
@@ -170,7 +172,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 

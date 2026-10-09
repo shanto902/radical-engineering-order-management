@@ -17,6 +17,7 @@ import { useOrders } from '../context/OrdersContext';
 import { OrderCard } from '../components/OrderCard';
 import { StatusChangeModal } from '../components/StatusChangeModal';
 import { invoiceService } from '../services/invoiceService';
+import { ordersApi } from '../services/ordersApi';
 import { Order, FilterStatus, OrderStatus } from '../types';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
@@ -69,9 +70,14 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
   const handleShareInvoice = async (order: Order) => {
     setSharingInvoice(true);
     try {
-      await invoiceService.shareInvoice(order);
-    } catch {
-      Alert.alert('Error', 'Could not generate invoice PDF');
+      let targetOrder = order;
+      if (!order.order_items || order.order_items.length === 0) {
+        const full = await ordersApi.getOrderById(order.id);
+        if (full) targetOrder = full;
+      }
+      await invoiceService.shareInvoice(targetOrder);
+    } catch (err: any) {
+      Alert.alert('Invoice Error', err?.message || 'Could not generate invoice PDF');
     } finally {
       setSharingInvoice(false);
     }

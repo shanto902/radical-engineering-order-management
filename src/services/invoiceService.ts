@@ -8,45 +8,88 @@ export const invoiceService = {
    * Builds high quality printable HTML for an order invoice
    */
   buildInvoiceHtml(order: Order): string {
-    const dateFormatted = order.placed_at
-      ? new Date(order.placed_at).toLocaleString('en-US', {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        })
-      : new Date().toLocaleDateString();
+    let dateFormatted = '';
+    try {
+      dateFormatted = order.placed_at
+        ? new Date(order.placed_at).toLocaleString('en-US', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })
+        : new Date().toLocaleDateString('en-US');
+    } catch {
+      dateFormatted = String(order.placed_at || '');
+    }
 
-    const itemsHtml = (order.order_items || [])
-      .map((item, index) => {
-        const prod = item.product;
-        const name = prod?.name || 'Solar / Electrical Item';
-        const price = prod?.discounted_price
-          ? Number(prod.discounted_price)
-          : Number(prod?.price || 0);
-        const qty = item.quantity || 1;
-        const lineTotal = price * qty;
+    let rawItems: any[] = [];
+    if (Array.isArray(order.order_items)) {
+      rawItems = order.order_items;
+    } else if (
+      typeof order.order_items === 'string' &&
+      (order.order_items as string).trim()
+    ) {
+      try {
+        rawItems = JSON.parse(order.order_items);
+      } catch {
+        rawItems = [];
+      }
+    }
 
-        return `
-        <tr style="border-bottom: 1px solid #E2E8F0;">
-          <td style="padding: 10px 12px; text-align: center; color: #64748B;">${index + 1}</td>
-          <td style="padding: 10px 12px; font-weight: 600; color: #0F172A;">${name}</td>
-          <td style="padding: 10px 12px; text-align: right; color: #334155;">৳${price.toLocaleString()}</td>
-          <td style="padding: 10px 12px; text-align: center; font-weight: 600; color: #0F172A;">${qty}</td>
-          <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #3C1100;">৳${lineTotal.toLocaleString()}</td>
-        </tr>
-      `;
-      })
-      .join('');
+    const itemsHtml =
+      rawItems.length > 0
+        ? rawItems
+            .map((item: any, index: number) => {
+              const prod =
+                typeof item.product === 'object' && item.product
+                  ? item.product
+                  : {};
+              const name = prod?.name || item.name || 'Solar / Electrical Item';
+              const price = prod?.discounted_price
+                ? Number(prod.discounted_price)
+                : Number(prod?.price || item.price || 0);
+              const qty = Number(item.quantity || 1);
+              const lineTotal = price * qty;
 
-    const extraChargesHtml = (order.extra_charges || [])
-      .map((ch) => {
+              return `
+              <tr style="border-bottom: 1px solid #E2E8F0;">
+                <td style="padding: 10px 12px; text-align: center; color: #64748B;">${index + 1}</td>
+                <td style="padding: 10px 12px; font-weight: 600; color: #0F172A;">${name}</td>
+                <td style="padding: 10px 12px; text-align: right; color: #334155;">৳${isNaN(price) ? '0' : price.toLocaleString()}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: 600; color: #0F172A;">${qty}</td>
+                <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #3C1100;">৳${isNaN(lineTotal) ? '0' : lineTotal.toLocaleString()}</td>
+              </tr>
+            `;
+            })
+            .join('')
+        : `
+          <tr style="border-bottom: 1px solid #E2E8F0;">
+            <td colspan="5" style="padding: 14px 12px; text-align: center; color: #64748B;">Standard Solar Order (${order.order_id || order.id})</td>
+          </tr>
+        `;
+
+    let rawExtraCharges: any[] = [];
+    if (Array.isArray(order.extra_charges)) {
+      rawExtraCharges = order.extra_charges;
+    } else if (
+      typeof order.extra_charges === 'string' &&
+      (order.extra_charges as string).trim()
+    ) {
+      try {
+        rawExtraCharges = JSON.parse(order.extra_charges);
+      } catch {
+        rawExtraCharges = [];
+      }
+    }
+
+    const extraChargesHtml = rawExtraCharges
+      .map((ch: any) => {
         const cost = Number(ch.cost || 0);
         return `
         <tr style="border-bottom: 1px solid #E2E8F0; background: #FFFBEB;">
           <td style="padding: 10px 12px; text-align: center; color: #D97706;">+</td>
-          <td style="padding: 10px 12px; color: #92400E; font-weight: 500;">${ch.name} (Service / Delivery)</td>
-          <td style="padding: 10px 12px; text-align: right; color: #92400E;">৳${cost.toLocaleString()}</td>
+          <td style="padding: 10px 12px; color: #92400E; font-weight: 500;">${ch.name || 'Extra Service'} (Service / Delivery)</td>
+          <td style="padding: 10px 12px; text-align: right; color: #92400E;">৳${isNaN(cost) ? '0' : cost.toLocaleString()}</td>
           <td style="padding: 10px 12px; text-align: center; color: #92400E;">1</td>
-          <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #92400E;">৳${cost.toLocaleString()}</td>
+          <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #92400E;">৳${isNaN(cost) ? '0' : cost.toLocaleString()}</td>
         </tr>
       `;
       })
@@ -296,26 +339,28 @@ export const invoiceService = {
 
   /**
    * Generates PDF and opens the native OS Share dialog (WhatsApp, email, drive)
+   * With automatic fallback to print preview if sharing is unavailable
    */
   async shareInvoice(order: Order): Promise<boolean> {
     try {
       const pdfUri = await this.generatePdf(order);
-      const isAvailable = await Sharing.isAvailableAsync();
+      const isAvailable = await Sharing.isAvailableAsync().catch(() => false);
 
       if (isAvailable) {
         await Sharing.shareAsync(pdfUri, {
-          UTI: '.pdf',
+          UTI: 'com.adobe.pdf',
           mimeType: 'application/pdf',
-          dialogTitle: `Radical Engineering Invoice #${order.order_id}`,
+          dialogTitle: `Radical Engineering Invoice #${order.order_id || order.id}`,
         });
         return true;
       } else {
-        alert(`PDF created at: ${pdfUri}`);
-        return false;
+        // Fallback for devices without native share sheet: open print/preview
+        await Print.printAsync({ uri: pdfUri });
+        return true;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to share invoice:', err);
-      return false;
+      throw new Error(err?.message || 'Failed to generate or share invoice PDF');
     }
   },
 };
