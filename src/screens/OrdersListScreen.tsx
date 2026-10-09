@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  ToastAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,9 +71,6 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
     if (success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const msg = `✓ Order #${orderNum} status updated to ${targetLabel}`;
-      if (Platform.OS === 'android') {
-        ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.BOTTOM);
-      }
       setToastMessage(msg);
       setTimeout(() => setToastMessage(null), 3000);
     } else {

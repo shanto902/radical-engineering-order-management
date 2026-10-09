@@ -10,7 +10,6 @@ import {
   Alert,
   Image,
   Platform,
-  ToastAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -96,9 +95,6 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     if (ok) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const msg = `✓ Order #${orderNum} status updated to ${targetLabel}`;
-      if (Platform.OS === 'android') {
-        ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.BOTTOM);
-      }
       setToastMessage(msg);
       setTimeout(() => setToastMessage(null), 3000);
     } else {
@@ -114,9 +110,6 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     if (ok) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const msg = `✓ Extra charges updated! Grand total: ৳${newTotal.toLocaleString()}`;
-      if (Platform.OS === 'android') {
-        ToastAndroid.showWithGravity(msg, ToastAndroid.SHORT, ToastAndroid.BOTTOM);
-      }
       setToastMessage(msg);
       setTimeout(() => setToastMessage(null), 3000);
     } else {
