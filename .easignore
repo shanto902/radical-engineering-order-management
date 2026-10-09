@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+npm-debug.*
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+web-build/
+*-firebase-adminsdk-*.json
+.env
+.DS_Store
