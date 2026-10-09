@@ -8,3 +8,4 @@ export function navigateToOrderDetail(orderId: string) {
     navigationRef.navigate('OrderDetail', { orderId });
   }
 }
+

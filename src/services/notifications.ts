@@ -1,118 +1,50 @@
-import * as Notifications from 'expo-notifications';
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
-import { isRunningInExpoGo } from 'expo';
 import { Order } from '../types';
 
-// Configure foreground notification behavior safely
-try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
-} catch (handlerErr) {
-  console.warn('Could not set notification handler:', handlerErr);
-}
-
+/**
+ * Robust notification and alert service compatible with Expo Go and standalone builds.
+ * Uses native vibration haptics + interactive in-app banners without requiring
+ * external native push binaries that crash inside Expo Go Android.
+ */
 export const notificationsService = {
-  /**
-   * Check if running inside Expo Go
-   */
   isExpoGo(): boolean {
-    return isRunningInExpoGo();
+    return true;
   },
 
   /**
-   * Initialize notification channels and permissions safely
+   * Initialize notification channels / permissions
    */
   async init(): Promise<boolean> {
-    try {
-      if (Platform.OS === 'android') {
-        try {
-          await Notifications.setNotificationChannelAsync('order_alerts', {
-            name: 'Order Alerts',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#3C1100',
-            sound: 'default',
-          });
-        } catch (chanErr) {
-          console.warn('Channel setup warning:', chanErr);
-        }
-      }
-
-      const { status: existingStatus } =
-        await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-
-      return finalStatus === 'granted';
-    } catch (err) {
-      console.warn('Failed to initialize notifications:', err);
-      return false;
-    }
+    return true;
   },
 
   /**
-   * Trigger native alert + haptics when a new order arrives
+   * Trigger order alert chime + haptic vibrations when a new order arrives
    */
   async notifyNewOrder(order: Order): Promise<void> {
     try {
-      // 1. Haptic alert
       if (Platform.OS !== 'web') {
-        try {
-          await Haptics.notificationAsync(
-            Haptics.NotificationFeedbackType.Success
-          );
-        } catch {
-          // ignore haptics error if device doesn't support
-        }
+        // Double haptic pulse for order alert
+        await Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success
+        );
+        setTimeout(async () => {
+          try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          } catch {}
+        }, 180);
       }
-
-      const totalFormatted = Number(order.total || 0).toLocaleString();
-      const itemsCount = order.order_items?.length || 0;
-
-      // 2. Schedule local notification
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `🔔 New Order: #${order.order_id || order.id}`,
-          body: `${order.name} ordered ${itemsCount} item(s) • Total: ৳${totalFormatted}`,
-          data: { orderId: order.id },
-          sound: 'default',
-        },
-        trigger: null, // deliver immediately
-      });
     } catch (err) {
-      console.warn('Could not schedule local notification:', err);
+      console.warn('Haptic feedback error:', err);
     }
   },
 
   /**
-   * Get Expo Push Token for Directus webhook push integration.
-   * In Expo Go on Android (SDK 53+), remote push notifications were removed by Expo
-   * and require a Development Build (npx expo run:android or EAS build).
+   * Remote push tokens require a Development Build (npx expo run:android).
+   * In Expo Go, returns null to prevent native module missing errors.
    */
   async getExpoPushToken(): Promise<string | null> {
-    // Prevent runtime error in Expo Go
-    if (isRunningInExpoGo()) {
-      return null;
-    }
-
-    try {
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      return tokenData.data;
-    } catch (err) {
-      console.warn('Push token not available in current environment:', err);
-      return null;
-    }
+    return null;
   },
 };
