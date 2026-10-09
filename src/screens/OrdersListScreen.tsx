@@ -144,8 +144,9 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
         </View>
       </View>
 
-      {/* Metrics Banner */}
-      <View style={styles.metricsContainer}>
+      <View style={styles.bodyContainer}>
+        {/* Metrics Banner */}
+        <View style={styles.metricsContainer}>
         <View style={styles.metricCard}>
           <Text style={styles.metricNumber}>{metrics.totalCount}</Text>
           <Text style={styles.metricLabel}>Total Orders</Text>
@@ -292,6 +293,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
           }
         />
       )}
+      </View>
 
       {/* Status Changer Modal */}
       <StatusChangeModal
@@ -306,6 +308,10 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
 
 const styles = StyleSheet.create({
   safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+  },
+  bodyContainer: {
     flex: 1,
     backgroundColor: COLORS.background,
   },

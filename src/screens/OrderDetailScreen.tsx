@@ -396,7 +396,7 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.white,
   },
   header: {
     flexDirection: 'row',
@@ -418,6 +418,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.md,
+    backgroundColor: COLORS.background,
   },
   statusBanner: {
     flexDirection: 'row',

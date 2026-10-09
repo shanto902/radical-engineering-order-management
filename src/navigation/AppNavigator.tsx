@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList, TabParamList } from './types';
 import { OrdersListScreen } from '../screens/OrdersListScreen';
@@ -18,9 +19,14 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function BottomTabs() {
   const { unreadNewOrders } = useOrders();
+  const insets = useSafeAreaInsets();
+
+  const safeBottom = Math.max(insets.bottom, Platform.OS === 'android' ? 14 : 10);
+  const tabHeight = 58 + safeBottom;
 
   return (
     <Tab.Navigator
+      safeAreaInsets={{ bottom: safeBottom }}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
@@ -29,13 +35,28 @@ function BottomTabs() {
           backgroundColor: COLORS.white,
           borderTopColor: COLORS.border,
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: tabHeight,
+          paddingBottom: safeBottom,
           paddingTop: 6,
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -2 },
+              shadowOpacity: 0.05,
+              shadowRadius: 4,
+            },
+            android: {
+              elevation: 8,
+            },
+          }),
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '700',
+          marginTop: 2,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
         },
       }}
     >
@@ -45,14 +66,21 @@ function BottomTabs() {
         options={{
           tabBarLabel: 'Orders',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="receipt-outline" size={size} color={color} />
+            <Ionicons name="receipt-outline" size={22} color={color} />
           ),
           tabBarBadge: unreadNewOrders > 0 ? unreadNewOrders : undefined,
           tabBarBadgeStyle: {
             backgroundColor: COLORS.pending,
             color: COLORS.white,
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: '800',
+            lineHeight: 13,
+            minWidth: 16,
+            height: 16,
+            borderRadius: 8,
+            alignSelf: 'center',
+            top: 2,
+            right: -6,
           },
         }}
       />
@@ -61,8 +89,8 @@ function BottomTabs() {
         component={AnalyticsScreen}
         options={{
           tabBarLabel: 'Analytics',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="bar-chart-outline" size={22} color={color} />
           ),
         }}
       />
@@ -71,8 +99,8 @@ function BottomTabs() {
         component={SettingsScreen}
         options={{
           tabBarLabel: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="settings-outline" size={22} color={color} />
           ),
         }}
       />

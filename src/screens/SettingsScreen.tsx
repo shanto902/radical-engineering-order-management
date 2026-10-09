@@ -243,7 +243,7 @@ export const SettingsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.white,
   },
   header: {
     paddingHorizontal: SPACING.md,
@@ -265,6 +265,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.md,
+    backgroundColor: COLORS.background,
   },
   card: {
     backgroundColor: COLORS.white,

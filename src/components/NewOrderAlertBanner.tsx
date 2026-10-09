@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Order } from '../types';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
@@ -22,10 +23,54 @@ export const NewOrderAlertBanner: React.FC<NewOrderAlertBannerProps> = ({
   onViewOrder,
   onDismiss,
 }) => {
+  const insets = useSafeAreaInsets();
+  const translateY = useRef(new Animated.Value(-120)).current;
+
+  useEffect(() => {
+    if (order) {
+      // Slide in from top
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        friction: 8,
+        tension: 40,
+      }).start();
+
+      // Auto dismiss after 7 seconds
+      const timer = setTimeout(() => {
+        handleDismiss();
+      }, 7000);
+
+      return () => clearTimeout(timer);
+    } else {
+      translateY.setValue(-120);
+    }
+  }, [order]);
+
+  const handleDismiss = () => {
+    Animated.timing(translateY, {
+      toValue: -140,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      onDismiss();
+    });
+  };
+
   if (!order) return null;
 
+  const topOffset = insets.top + (Platform.OS === 'android' ? 10 : 8);
+
   return (
-    <View style={styles.bannerWrapper}>
+    <Animated.View
+      style={[
+        styles.bannerWrapper,
+        {
+          top: topOffset,
+          transform: [{ translateY }],
+        },
+      ]}
+    >
       <View style={styles.bannerContainer}>
         <View style={styles.iconCircle}>
           <Ionicons name="notifications" size={20} color={COLORS.white} />
@@ -45,26 +90,31 @@ export const NewOrderAlertBanner: React.FC<NewOrderAlertBannerProps> = ({
           <TouchableOpacity
             style={styles.viewBtn}
             onPress={() => onViewOrder(order)}
+            activeOpacity={0.8}
           >
             <Text style={styles.viewBtnText}>View</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.closeBtn} onPress={onDismiss}>
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={handleDismiss}
+            activeOpacity={0.7}
+          >
             <Ionicons name="close" size={18} color={COLORS.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   bannerWrapper: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 54 : 16,
-    left: 14,
-    right: 14,
-    zIndex: 9999,
+    left: 12,
+    right: 12,
+    zIndex: 99999,
+    elevation: 20,
   },
   bannerContainer: {
     backgroundColor: COLORS.white,
@@ -72,17 +122,17 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: COLORS.primary,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.18,
+        shadowRadius: 12,
       },
       android: {
-        elevation: 8,
+        elevation: 12,
       },
     }),
   },
@@ -117,7 +167,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.text,
     marginTop: 2,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   actionRow: {
     flexDirection: 'row',
@@ -127,9 +177,9 @@ const styles = StyleSheet.create({
   },
   viewBtn: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: RADIUS.xs,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: RADIUS.sm,
   },
   viewBtnText: {
     color: COLORS.white,
@@ -137,7 +187,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   closeBtn: {
-    padding: 4,
+    padding: 6,
   },
 });
-
