@@ -3,12 +3,16 @@ node_modules/
 dist/
 npm-debug.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
+*.pem
 *.mobileprovision
 *.orig.*
 web-build/
+.env
+*-firebase-adminsdk-*.json
 
 # macOS
 .DS_Store

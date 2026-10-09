@@ -2,31 +2,66 @@ import * as Haptics from 'expo-haptics';
 import { Platform, Vibration } from 'react-native';
 import { Order } from '../types';
 
+let NotificationsModule: any = null;
+
+try {
+  // Dynamically require expo-notifications so Expo Go stays safe from missing binary crashes
+  NotificationsModule = require('expo-notifications');
+  if (
+    NotificationsModule &&
+    typeof NotificationsModule.setNotificationHandler === 'function'
+  ) {
+    NotificationsModule.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  }
+} catch {
+  NotificationsModule = null;
+}
+
 /**
- * Robust notification and alert service 100% compatible with Expo Go and standalone builds.
- * Uses high-priority vibration patterns + haptics + interactive in-app banners.
- * 
- * Note: Expo removed native audio drivers ('ExponentAV' / 'ExpoAudio') from the generic
- * Expo Go APK. In Expo Go, alerts use rhythmic vibration + banners.
- * To enable custom WAV/MP3 chime playback, a Development Build (npx expo run:android) is used.
+ * Robust notification and alert service:
+ * - In Development & Standalone APK builds: Uses native FCM push channels & ExponentPushToken.
+ * - In Expo Go: Uses high-priority vibration patterns + WebSockets + in-app banners.
  */
 export const notificationsService = {
   isExpoGo(): boolean {
-    return true;
+    return !NotificationsModule;
   },
 
   /**
-   * Initialize notification channels / permissions
+   * Initialize notification channels & handlers
    */
   async init(): Promise<boolean> {
-    return true;
+    try {
+      if (
+        Platform.OS === 'android' &&
+        NotificationsModule?.setNotificationChannelAsync
+      ) {
+        await NotificationsModule.setNotificationChannelAsync('orders', {
+          name: 'Order Alerts',
+          importance: NotificationsModule.AndroidImportance.MAX,
+          vibrationPattern: [0, 300, 150, 300],
+          lightColor: '#FCB974',
+          sound: 'default',
+        });
+      }
+      return true;
+    } catch (err) {
+      console.warn('Notification init error:', err);
+      return false;
+    }
   },
 
   /**
-   * Play order alert sound if native audio module is present (guarded against Expo Go crash)
+   * Play order alert sound
    */
   async playOrderChime(): Promise<void> {
-    // Intentionally no-op in Expo Go to prevent ExponentAV missing module crash
+    // Handled natively by notification channel in standalone APK
   },
 
   /**
@@ -54,10 +89,36 @@ export const notificationsService = {
   },
 
   /**
-   * Remote push tokens require a Development Build (npx expo run:android).
-   * In Expo Go, returns null to prevent native module missing errors.
+   * Fetch Expo Push Token for FCM server-side pushes (standalone APK or Dev Client)
    */
   async getExpoPushToken(): Promise<string | null> {
-    return null;
+    try {
+      if (!NotificationsModule || Platform.OS === 'web') {
+        return null;
+      }
+
+      const { status: existingStatus } =
+        await NotificationsModule.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } =
+          await NotificationsModule.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        return null;
+      }
+
+      const tokenData = await NotificationsModule.getExpoPushTokenAsync({
+        projectId: '6a901469-f3e4-46be-a5c0-357a75505d03',
+      });
+
+      return tokenData.data || null;
+    } catch (err) {
+      // In Expo Go or unconfigured environment, quietly fallback
+      return null;
+    }
   },
 };

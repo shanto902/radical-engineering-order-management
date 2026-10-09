@@ -14,6 +14,14 @@
           "resizeMode": "contain",
           "backgroundColor": "#3c1100"
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#3c1100",
+          "sounds": ["./assets/sounds/chime.wav"]
+        }
       ]
     ],
     "ios": {
@@ -26,18 +34,19 @@
         "backgroundColor": "#3c1100"
       },
       "package": "com.radicalengineering.orders",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
-      "permissions": [
-        "INTERNET",
-        "VIBRATE",
-        "RECEIVE_BOOT_COMPLETED"
-      ]
+      "permissions": ["INTERNET", "VIBRATE", "RECEIVE_BOOT_COMPLETED"]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
-    "scheme": "radicalorders"
+    "scheme": "radicalorders",
+    "extra": {
+      "eas": {
+        "projectId": "6a901469-f3e4-46be-a5c0-357a75505d03"
+      }
+    }
   }
 }
-
