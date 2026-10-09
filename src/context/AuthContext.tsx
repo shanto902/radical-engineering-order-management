@@ -87,11 +87,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   // Automatically register device push token in Directus user profile upon login
   useEffect(() => {
     if (isAuthenticated) {
-      notificationsService.getExpoPushToken().then((pushToken) => {
+      notificationsService.getExpoPushToken().then(async (pushToken) => {
         if (pushToken) {
-          directus
-            .request(updateMe({ push_token: pushToken } as any))
-            .catch(() => {});
+          try {
+            await directus.request(updateMe({ push_token: pushToken } as any));
+            console.log('[AuthContext] Device push token registered to user profile:', pushToken);
+          } catch (err) {
+            console.warn('[AuthContext] Push token registration warning:', err);
+          }
         }
       });
     }

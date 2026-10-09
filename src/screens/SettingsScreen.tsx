@@ -14,6 +14,8 @@ import * as Clipboard from 'expo-clipboard';
 import { useOrders } from '../context/OrdersContext';
 import { useAuth } from '../context/AuthContext';
 import { notificationsService } from '../services/notifications';
+import { directus } from '../services/directus';
+import { updateMe } from '@directus/sdk';
 import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
@@ -29,10 +31,38 @@ export const SettingsScreen: React.FC = () => {
   const { user, logout } = useAuth();
 
   const [pushToken, setPushToken] = useState<string | null>(null);
+  const [isSyncingToken, setIsSyncingToken] = useState(false);
 
   useEffect(() => {
     notificationsService.getExpoPushToken().then(setPushToken);
   }, []);
+
+  const handleSyncPushToken = async () => {
+    try {
+      setIsSyncingToken(true);
+      const token = await notificationsService.getExpoPushToken();
+      if (!token) {
+        Alert.alert(
+          'Notice',
+          'Push notification token is only available on physical devices with a standalone build.'
+        );
+        return;
+      }
+      setPushToken(token);
+      await directus.request(updateMe({ push_token: token } as any));
+      Alert.alert(
+        'Token Registered',
+        'Your device push token has been successfully linked to your account. You will now receive instant order alerts!'
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Registration Notice',
+        err?.message || 'Could not update push token on server.'
+      );
+    } finally {
+      setIsSyncingToken(false);
+    }
+  };
 
   const handleTestNotification = () => {
     const dummyOrder = {
@@ -227,20 +257,47 @@ export const SettingsScreen: React.FC = () => {
               <Text style={styles.tokenText} numberOfLines={2}>
                 {pushToken}
               </Text>
-              <TouchableOpacity
-                style={styles.copyTokenBtn}
-                onPress={handleCopyPushToken}
-              >
-                <Ionicons name="copy-outline" size={14} color={COLORS.primary} />
-                <Text style={styles.copyTokenBtnText}>Copy Token</Text>
-              </TouchableOpacity>
+              <View style={styles.tokenActionsRow}>
+                <TouchableOpacity
+                  style={styles.copyTokenBtn}
+                  onPress={handleCopyPushToken}
+                >
+                  <Ionicons name="copy-outline" size={14} color={COLORS.primary} />
+                  <Text style={styles.copyTokenBtnText}>Copy Token</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.copyTokenBtn, { backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }]}
+                  onPress={handleSyncPushToken}
+                  disabled={isSyncingToken}
+                >
+                  <Ionicons name="cloud-upload-outline" size={14} color={COLORS.delivered} />
+                  <Text style={[styles.copyTokenBtnText, { color: COLORS.delivered }]}>
+                    {isSyncingToken ? 'Syncing...' : 'Sync to Account'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
-            <Text style={styles.noTokenText}>
-              {notificationsService.isExpoGo()
-                ? 'ℹ️ Running in Expo Go: Live polling and in-app order alerts are fully active. Remote push tokens require a development build.'
-                : 'Available on physical devices with standalone EAS build.'}
-            </Text>
+            <View>
+              <Text style={styles.noTokenText}>
+                {notificationsService.isExpoGo()
+                  ? 'ℹ️ Running in Expo Go: Live polling and in-app order alerts are fully active. Remote push tokens require a development build.'
+                  : 'Available on physical devices with standalone EAS build.'}
+              </Text>
+              {!notificationsService.isExpoGo() && (
+                <TouchableOpacity
+                  style={[styles.testNotificationBtn, { marginTop: 12 }]}
+                  onPress={handleSyncPushToken}
+                  disabled={isSyncingToken}
+                >
+                  <Ionicons name="cloud-upload-outline" size={16} color={COLORS.primary} />
+                  <Text style={styles.testNotificationBtnText}>
+                    {isSyncingToken ? 'Registering...' : 'Register Device for Alerts'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
         </View>
 
@@ -381,11 +438,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontFamily: 'monospace',
   },
+  tokenActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+    flexWrap: 'wrap',
+  },
   copyTokenBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 6,
     alignSelf: 'flex-start',
   },
   copyTokenBtnText: {
