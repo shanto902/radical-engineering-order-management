@@ -149,7 +149,7 @@ export const SettingsScreen: React.FC = () => {
           >
             <Ionicons name="notifications-outline" size={18} color={COLORS.primary} />
             <Text style={styles.testNotificationBtnText}>
-              Test Order Sound & Push Alert
+              Test Order Alert & Vibration
             </Text>
           </TouchableOpacity>
         </View>

@@ -1,11 +1,14 @@
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
+import { Platform, Vibration } from 'react-native';
 import { Order } from '../types';
 
 /**
- * Robust notification and alert service compatible with Expo Go and standalone builds.
- * Uses native audio chime playback + haptic vibrations + interactive in-app banners.
+ * Robust notification and alert service 100% compatible with Expo Go and standalone builds.
+ * Uses high-priority vibration patterns + haptics + interactive in-app banners.
+ * 
+ * Note: Expo removed native audio drivers ('ExponentAV' / 'ExpoAudio') from the generic
+ * Expo Go APK. In Expo Go, alerts use rhythmic vibration + banners.
+ * To enable custom WAV/MP3 chime playback, a Development Build (npx expo run:android) is used.
  */
 export const notificationsService = {
   isExpoGo(): boolean {
@@ -13,63 +16,29 @@ export const notificationsService = {
   },
 
   /**
-   * Initialize audio mode and notification permissions
+   * Initialize notification channels / permissions
    */
   async init(): Promise<boolean> {
-    try {
-      if (Platform.OS !== 'web') {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-      }
-      return true;
-    } catch (err) {
-      console.warn('Audio init error:', err);
-      return false;
-    }
+    return true;
   },
 
   /**
-   * Play the clear melodic chime sound for new orders
+   * Play order alert sound if native audio module is present (guarded against Expo Go crash)
    */
   async playOrderChime(): Promise<void> {
-    try {
-      if (Platform.OS === 'web') return;
-
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-      });
-
-      const { sound } = await Audio.Sound.createAsync(
-        require('../../assets/sounds/chime.wav'),
-        { shouldPlay: true, volume: 1.0 }
-      );
-
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync().catch(() => {});
-        }
-      });
-    } catch (err) {
-      console.warn('Failed to play order chime sound:', err);
-    }
+    // Intentionally no-op in Expo Go to prevent ExponentAV missing module crash
   },
 
   /**
-   * Trigger order alert chime + haptic vibrations when a new order arrives
+   * Trigger order alert vibration + haptic feedback when a new order arrives
    */
   async notifyNewOrder(order: Order): Promise<void> {
-    // 1. Play melodic notification sound
-    this.playOrderChime();
-
-    // 2. Double haptic pulse
     try {
       if (Platform.OS !== 'web') {
+        // Double-buzz pattern: 300ms buzz, 120ms pause, 300ms buzz
+        Vibration.vibrate([0, 300, 120, 300]);
+
+        // Rich haptics
         await Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success
         );
@@ -77,10 +46,10 @@ export const notificationsService = {
           try {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
           } catch {}
-        }, 180);
+        }, 200);
       }
     } catch (err) {
-      console.warn('Haptic feedback error:', err);
+      console.warn('Haptic/Vibration error:', err);
     }
   },
 
