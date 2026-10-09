@@ -163,7 +163,9 @@ export const SettingsScreen: React.FC = () => {
             </View>
           ) : (
             <Text style={styles.noTokenText}>
-              Available on physical devices with Expo Go or standalone EAS build.
+              {notificationsService.isExpoGo()
+                ? 'ℹ️ Running in Expo Go: Live polling and in-app order alerts are fully active. Remote push tokens require a development build.'
+                : 'Available on physical devices with standalone EAS build.'}
             </Text>
           )}
         </View>
@@ -337,3 +339,4 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 });
+

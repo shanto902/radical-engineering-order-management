@@ -1,12 +1,12 @@
 export type OrderStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'processing'
-  | 'shipped'
-  | 'delivered'
-  | 'cancelled';
+  | "pending"
+  | "confirmed"
+  | "processing"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
 
-export type FilterStatus = 'all' | OrderStatus;
+export type FilterStatus = "all" | OrderStatus;
 
 export interface Product {
   id: string;

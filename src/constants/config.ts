@@ -32,3 +32,4 @@ export const APP_CONFIG = {
   // Order polling frequency in ms (active)
   orderPollIntervalMs: 25000,
 };
+

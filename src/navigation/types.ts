@@ -8,3 +8,4 @@ export type TabParamList = {
   AnalyticsTab: undefined;
   SettingsTab: undefined;
 };
+
