@@ -116,3 +116,4 @@ pnpm web
         ├── AppNavigator.tsx    # Native Stack + Bottom Tabs
         └── types.ts            # Screen route parameter types
 ```
+

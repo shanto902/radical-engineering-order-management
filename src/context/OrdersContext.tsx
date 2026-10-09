@@ -40,6 +40,9 @@ interface OrdersContextType {
   clearUnreadCount: () => void;
   isPollingEnabled: boolean;
   togglePolling: () => void;
+  activeNewOrderAlert: Order | null;
+  dismissNewOrderAlert: () => void;
+  triggerDemoAlert: (order: Order) => void;
 }
 
 const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
@@ -56,6 +59,8 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [unreadNewOrders, setUnreadNewOrders] = useState<number>(0);
   const [isPollingEnabled, setIsPollingEnabled] = useState<boolean>(true);
+  const [activeNewOrderAlert, setActiveNewOrderAlert] =
+    useState<Order | null>(null);
 
   // Track known order IDs to detect newly arrived orders
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
@@ -87,6 +92,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
           // Notify user about the newest order
           notificationsService.notifyNewOrder(newlyArrived[0]);
           setUnreadNewOrders((prev) => prev + newlyArrived.length);
+          setActiveNewOrderAlert(newlyArrived[0]);
         }
       }
 
@@ -243,6 +249,13 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         clearUnreadCount,
         isPollingEnabled,
         togglePolling,
+        activeNewOrderAlert,
+        dismissNewOrderAlert: () => setActiveNewOrderAlert(null),
+        triggerDemoAlert: (order: Order) => {
+          notificationsService.notifyNewOrder(order);
+          setActiveNewOrderAlert(order);
+          setUnreadNewOrders((prev) => prev + 1);
+        },
       }}
     >
       {children}

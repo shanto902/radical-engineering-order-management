@@ -17,8 +17,13 @@ import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 export const SettingsScreen: React.FC = () => {
-  const { isPollingEnabled, togglePolling, lastSynced, refreshOrders } =
-    useOrders();
+  const {
+    isPollingEnabled,
+    togglePolling,
+    lastSynced,
+    refreshOrders,
+    triggerDemoAlert,
+  } = useOrders();
 
   const [pushToken, setPushToken] = useState<string | null>(null);
 
@@ -26,7 +31,7 @@ export const SettingsScreen: React.FC = () => {
     notificationsService.getExpoPushToken().then(setPushToken);
   }, []);
 
-  const handleTestNotification = async () => {
+  const handleTestNotification = () => {
     const dummyOrder = {
       id: 'demo-test',
       order_id: 'TEST' + Math.floor(1000 + Math.random() * 9000),
@@ -45,11 +50,7 @@ export const SettingsScreen: React.FC = () => {
       ],
     };
 
-    await notificationsService.notifyNewOrder(dummyOrder);
-    Alert.alert(
-      'Notification Sent',
-      'A test order notification with haptics was triggered!'
-    );
+    triggerDemoAlert(dummyOrder);
   };
 
   const handleCopyPushToken = async () => {
