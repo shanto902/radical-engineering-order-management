@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createDirectus,
   rest,
+  realtime,
   authentication,
   AuthenticationStorage,
   AuthenticationData,
@@ -37,7 +38,7 @@ export const directusStorage: AuthenticationStorage = {
 };
 
 /**
- * Directus client with json-mode authentication and automatic token refresh
+ * Directus client with json-mode authentication, REST methods, and realtime WebSocket capability
  */
 export const directus = createDirectus(APP_CONFIG.apiBaseUrl)
   .with(
@@ -47,4 +48,5 @@ export const directus = createDirectus(APP_CONFIG.apiBaseUrl)
       msRefreshBeforeExpires: 30000,
     })
   )
-  .with(rest());
+  .with(rest())
+  .with(realtime());

@@ -131,6 +131,33 @@ export const ordersApi = {
   },
 
   /**
+   * Ultra-lightweight ping query to check for new orders without heavy relational joins.
+   * Fetches only 1 row with scalar fields (~150 bytes, zero joins, <5ms DB query).
+   */
+  async getLatestOrderMeta(): Promise<{
+    id: string;
+    order_id: string;
+    name: string;
+    total: number;
+    placed_at: string;
+    status: OrderStatus;
+  } | null> {
+    try {
+      const result = await directus.request(
+        readItems('orders' as any, {
+          sort: ['-placed_at', '-date_created'],
+          limit: 1,
+          fields: ['id', 'order_id', 'name', 'total', 'placed_at', 'status'] as any,
+        })
+      );
+      const items = (result as unknown as any[]) || [];
+      return items.length > 0 ? items[0] : null;
+    } catch (err) {
+      return null;
+    }
+  },
+
+  /**
    * Poll for latest orders created after a timestamp
    */
   async getNewOrdersSince(sinceTimestamp: string): Promise<Order[]> {

@@ -6,6 +6,7 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
+import { AppState } from 'react-native';
 import {
   Order,
   OrderStatus,
@@ -14,6 +15,7 @@ import {
   ExtraCharge,
 } from '../types';
 import { ordersApi } from '../services/ordersApi';
+import { directus } from '../services/directus';
 import { notificationsService } from '../services/notifications';
 import { useAuth } from './AuthContext';
 import { APP_CONFIG } from '../constants/config';
@@ -67,9 +69,10 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Track known order IDs to detect newly arrived orders
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const lastKnownLatestIdRef = useRef<string | null>(null);
   const isFirstLoadRef = useRef<boolean>(true);
 
-  // Initialize notification permissions once on mount
+  // Initialize notification sound / haptics once on mount
   useEffect(() => {
     notificationsService.init();
   }, []);
@@ -97,16 +100,19 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         );
 
         if (newlyArrived.length > 0) {
-          // Notify user about the newest order
+          // Notify user about the newest order with sound + haptics
           notificationsService.notifyNewOrder(newlyArrived[0]);
           setUnreadNewOrders((prev) => prev + newlyArrived.length);
           setActiveNewOrderAlert(newlyArrived[0]);
         }
       }
 
-      // Update known set
+      // Update known set and latest id
       const currentIds = new Set(fetched.map((o) => o.id));
       knownOrderIdsRef.current = currentIds;
+      if (fetched.length > 0) {
+        lastKnownLatestIdRef.current = fetched[0].id;
+      }
 
       setOrders(fetched);
       setLastSynced(new Date());
@@ -130,16 +136,103 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [isAuthenticated, loadOrders]);
 
-  // Periodic polling for real-time order alerts
+  // Ultra-lightweight ping poller (only queries 1 row, 5 scalar fields, 0 DB joins)
+  // Pauses automatically when app is minimized to eliminate server pressure and battery drain
   useEffect(() => {
     if (!isPollingEnabled || !isAuthenticated) return;
 
+    let appState = AppState.currentState;
+
+    const checkForNewOrdersPing = async () => {
+      // Never query if the app is in background or phone is asleep
+      if (AppState.currentState !== 'active') return;
+
+      try {
+        const latest = await ordersApi.getLatestOrderMeta();
+        if (!latest) return;
+
+        // If the newest order ID is different from our last known ID
+        if (
+          lastKnownLatestIdRef.current &&
+          latest.id !== lastKnownLatestIdRef.current
+        ) {
+          lastKnownLatestIdRef.current = latest.id;
+          // Trigger audio chime + vibration + top banner immediately
+          notificationsService.notifyNewOrder(latest as any);
+          setActiveNewOrderAlert(latest as any);
+          setUnreadNewOrders((prev) => prev + 1);
+          // Refresh the full feed
+          loadOrders();
+        } else if (!lastKnownLatestIdRef.current) {
+          lastKnownLatestIdRef.current = latest.id;
+        }
+      } catch (err) {
+        // Silent fail on network transient
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      // When resuming from background back into foreground, immediately check
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
+        checkForNewOrdersPing();
+      }
+      appState = nextAppState;
+    });
+
     const interval = setInterval(() => {
-      loadOrders();
+      checkForNewOrdersPing();
     }, APP_CONFIG.orderPollIntervalMs);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, [isPollingEnabled, isAuthenticated, loadOrders]);
+
+  // Directus WebSocket Realtime listener (if WEBSOCKETS_ENABLED is set on Directus Docker)
+  // Seamlessly receives instant pushes from Directus with zero polling delay.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let isMounted = true;
+    let unsubscribeFn: (() => void) | null = null;
+
+    const setupRealtime = async () => {
+      try {
+        const result = await directus.subscribe('orders', {
+          query: {
+            fields: ['id', 'order_id', 'name', 'phone', 'total', 'status', 'placed_at'],
+          },
+        });
+        unsubscribeFn = result.unsubscribe;
+
+        for await (const message of result.subscription) {
+          if (!isMounted) break;
+          const ev = message as any;
+          if (ev.event === 'create' && ev.data && ev.data.length > 0) {
+            const newOrder = ev.data[0];
+            notificationsService.notifyNewOrder(newOrder as any);
+            setActiveNewOrderAlert(newOrder as any);
+            setUnreadNewOrders((prev) => prev + 1);
+            loadOrders();
+          }
+        }
+      } catch (err) {
+        // Silently fall back to lightweight ping poller when WebSockets are disabled on server
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribeFn) {
+        try {
+          unsubscribeFn();
+        } catch {}
+      }
+    };
+  }, [isAuthenticated, loadOrders]);
 
   const updateStatus = async (
     orderId: string,

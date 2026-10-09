@@ -1,11 +1,11 @@
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
+import { Audio } from 'expo-av';
 import { Order } from '../types';
 
 /**
  * Robust notification and alert service compatible with Expo Go and standalone builds.
- * Uses native vibration haptics + interactive in-app banners without requiring
- * external native push binaries that crash inside Expo Go Android.
+ * Uses native audio chime playback + haptic vibrations + interactive in-app banners.
  */
 export const notificationsService = {
   isExpoGo(): boolean {
@@ -13,19 +13,63 @@ export const notificationsService = {
   },
 
   /**
-   * Initialize notification channels / permissions
+   * Initialize audio mode and notification permissions
    */
   async init(): Promise<boolean> {
-    return true;
+    try {
+      if (Platform.OS !== 'web') {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+      }
+      return true;
+    } catch (err) {
+      console.warn('Audio init error:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Play the clear melodic chime sound for new orders
+   */
+  async playOrderChime(): Promise<void> {
+    try {
+      if (Platform.OS === 'web') return;
+
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        require('../../assets/sounds/chime.wav'),
+        { shouldPlay: true, volume: 1.0 }
+      );
+
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync().catch(() => {});
+        }
+      });
+    } catch (err) {
+      console.warn('Failed to play order chime sound:', err);
+    }
   },
 
   /**
    * Trigger order alert chime + haptic vibrations when a new order arrives
    */
   async notifyNewOrder(order: Order): Promise<void> {
+    // 1. Play melodic notification sound
+    this.playOrderChime();
+
+    // 2. Double haptic pulse
     try {
       if (Platform.OS !== 'web') {
-        // Double haptic pulse for order alert
         await Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success
         );
