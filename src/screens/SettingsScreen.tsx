@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useOrders } from '../context/OrdersContext';
+import { useAuth } from '../context/AuthContext';
 import { notificationsService } from '../services/notifications';
 import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
@@ -24,6 +25,7 @@ export const SettingsScreen: React.FC = () => {
     refreshOrders,
     triggerDemoAlert,
   } = useOrders();
+  const { user, logout } = useAuth();
 
   const [pushToken, setPushToken] = useState<string | null>(null);
 
@@ -60,6 +62,26 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out of Directus?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => logout(),
+        },
+      ]
+    );
+  };
+
+  const displayName = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(' ') ||
+      user.email
+    : 'Authenticated Staff';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
@@ -70,6 +92,37 @@ export const SettingsScreen: React.FC = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* User Account Profile */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>AUTHENTICATED STAFF PROFILE</Text>
+          <View style={styles.userProfileRow}>
+            <View style={styles.userAvatar}>
+              <Text style={styles.userAvatarText}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.userNameText}>{displayName}</Text>
+              <Text style={styles.userEmailText}>{user?.email || 'Directus Authenticated'}</Text>
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleBadgeText}>
+                  {typeof user?.role === 'object' && user?.role?.name
+                    ? user.role.name
+                    : 'Authorized Staff'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.logoutBtn}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out-outline" size={17} color={COLORS.danger} />
+            <Text style={styles.logoutBtnText}>Sign Out of Directus</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Real-time Order Alerts */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>ORDER NOTIFICATIONS & SYNC</Text>
@@ -338,6 +391,65 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textMuted,
     marginTop: 10,
+  },
+  userProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  userAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  userAvatarText: {
+    color: COLORS.white,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  userNameText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  userEmailText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 1,
+  },
+  roleBadge: {
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    paddingVertical: 10,
+    borderRadius: RADIUS.sm,
+    gap: 6,
+  },
+  logoutBtnText: {
+    color: COLORS.danger,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
 

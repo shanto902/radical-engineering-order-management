@@ -1,4 +1,5 @@
 import React from 'react';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,14 +8,16 @@ import { OrdersListScreen } from '../screens/OrdersListScreen';
 import { OrderDetailScreen } from '../screens/OrderDetailScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { LoginScreen } from '../screens/LoginScreen';
 import { useOrders } from '../context/OrdersContext';
+import { useAuth } from '../context/AuthContext';
 import { COLORS } from '../constants/theme';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function BottomTabs() {
-  const { unreadNewOrders, metrics } = useOrders();
+  const { unreadNewOrders } = useOrders();
 
   return (
     <Tab.Navigator
@@ -78,6 +81,17 @@ function BottomTabs() {
 }
 
 export function AppNavigator() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Authenticating with Directus...</Text>
+      </View>
+    );
+  }
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -85,15 +99,35 @@ export function AppNavigator() {
         animation: 'slide_from_right',
       }}
     >
-      <Stack.Screen name="MainTabs" component={BottomTabs} />
-      <Stack.Screen
-        name="OrderDetail"
-        component={OrderDetailScreen}
-        options={{
-          animation: 'slide_from_right',
-        }}
-      />
+      {!isAuthenticated ? (
+        <Stack.Screen name="Login" component={LoginScreen} />
+      ) : (
+        <>
+          <Stack.Screen name="MainTabs" component={BottomTabs} />
+          <Stack.Screen
+            name="OrderDetail"
+            component={OrderDetailScreen}
+            options={{
+              animation: 'slide_from_right',
+            }}
+          />
+        </>
+      )}
     </Stack.Navigator>
   );
 }
 
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+});

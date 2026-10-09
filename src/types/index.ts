@@ -1,3 +1,12 @@
+export interface DirectusUser {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email: string;
+  avatar?: string | null;
+  role?: { id?: string; name?: string } | string | null;
+}
+
 export type OrderStatus =
   | "pending"
   | "confirmed"

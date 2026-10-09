@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+  Login: undefined;
   MainTabs: undefined;
   OrderDetail: { orderId: string };
 };
@@ -8,4 +9,3 @@ export type TabParamList = {
   AnalyticsTab: undefined;
   SettingsTab: undefined;
 };
-

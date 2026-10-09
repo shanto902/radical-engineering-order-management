@@ -173,9 +173,10 @@ export const ordersApi = {
         url.searchParams.set('filter', JSON.stringify(filter));
       }
 
+      const token = (await directus.getToken()) || APP_CONFIG.accessToken;
       const response = await fetch(url.toString(), {
         headers: {
-          Authorization: `Bearer ${APP_CONFIG.accessToken}`,
+          Authorization: `Bearer ${token}`,
           Accept: 'application/json',
         },
       });

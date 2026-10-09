@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import * as SplashScreen from 'expo-splash-screen';
+import { AuthProvider } from './src/context/AuthContext';
 import { OrdersProvider, useOrders } from './src/context/OrdersContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import {
@@ -45,9 +46,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <OrdersProvider>
-        <MainApp />
-      </OrdersProvider>
+      <AuthProvider>
+        <OrdersProvider>
+          <MainApp />
+        </OrdersProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

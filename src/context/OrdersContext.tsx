@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { ordersApi } from '../services/ordersApi';
 import { notificationsService } from '../services/notifications';
+import { useAuth } from './AuthContext';
 import { APP_CONFIG } from '../constants/config';
 
 interface OrdersContextType {
@@ -50,6 +51,8 @@ const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
 export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const { isAuthenticated } = useAuth();
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -72,6 +75,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const loadOrders = useCallback(async (isPullRefresh = false) => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     if (isPullRefresh) {
       setRefreshing(true);
     } else if (isFirstLoadRef.current) {
@@ -110,23 +118,28 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
-  // Initial load
+  // Initial load when authenticated
   useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
+    if (isAuthenticated) {
+      loadOrders();
+    } else {
+      setOrders([]);
+      setLoading(false);
+    }
+  }, [isAuthenticated, loadOrders]);
 
   // Periodic polling for real-time order alerts
   useEffect(() => {
-    if (!isPollingEnabled) return;
+    if (!isPollingEnabled || !isAuthenticated) return;
 
     const interval = setInterval(() => {
       loadOrders();
     }, APP_CONFIG.orderPollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [isPollingEnabled, loadOrders]);
+  }, [isPollingEnabled, isAuthenticated, loadOrders]);
 
   const updateStatus = async (
     orderId: string,
