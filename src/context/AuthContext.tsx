@@ -98,14 +98,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [isAuthenticated]);
 
   /**
-   * Login using Directus email & password
+   * Login using Directus email & password.
+   * Note: We intentionally do NOT toggle the global `loading` state here
+   * so that LoginScreen remains mounted and can display inline validation
+   * errors rather than having its state wiped by AppNavigator's full-screen loader.
    */
   const login = async (
     email: string,
     password: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
-      setLoading(true);
       const cleanEmail = email.trim();
 
       // Call Directus JSON-mode login
@@ -141,15 +143,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return { success: true };
     } catch (err: any) {
       console.warn('Directus login failed:', err);
+
       let errorMsg = 'Invalid email or password. Please check your credentials.';
-      if (err?.errors && err.errors[0]?.message) {
-        errorMsg = err.errors[0].message;
+      const directusCode = err?.errors?.[0]?.extensions?.code;
+      const directusMsg = err?.errors?.[0]?.message;
+
+      if (
+        directusCode === 'INVALID_CREDENTIALS' ||
+        directusMsg?.toLowerCase().includes('credentials')
+      ) {
+        errorMsg = 'Incorrect email or password. Please try again.';
+      } else if (
+        err?.message?.includes('Network request failed') ||
+        err?.message?.includes('fetch failed') ||
+        err?.message?.includes('NetworkError')
+      ) {
+        errorMsg = 'Cannot connect to server. Please check your internet connection.';
+      } else if (directusMsg) {
+        errorMsg = directusMsg;
       } else if (err?.message) {
         errorMsg = err.message;
       }
+
       return { success: false, error: errorMsg };
-    } finally {
-      setLoading(false);
     }
   };
 

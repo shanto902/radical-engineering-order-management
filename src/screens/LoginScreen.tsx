@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useAuth } from '../context/AuthContext';
 import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
@@ -29,6 +30,9 @@ export const LoginScreen: React.FC = () => {
   const handleLogin = async () => {
     if (!email.trim() || !password) {
       setErrorMessage('Please enter both email and password.');
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } catch {}
       return;
     }
 
@@ -38,10 +42,18 @@ export const LoginScreen: React.FC = () => {
       const res = await login(email, password);
 
       if (!res.success) {
-        setErrorMessage(res.error || 'Authentication failed. Please verify credentials.');
+        setErrorMessage(
+          res.error || 'Authentication failed. Please verify credentials.'
+        );
+        try {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } catch {}
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to connect to Directus.');
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {}
     } finally {
       setSubmitting(false);
     }
@@ -79,22 +91,34 @@ export const LoginScreen: React.FC = () => {
               <View style={styles.errorBox}>
                 <Ionicons
                   name="alert-circle"
-                  size={18}
+                  size={20}
                   color={COLORS.danger}
-                  style={{ marginRight: 6 }}
+                  style={{ marginRight: 8 }}
                 />
                 <Text style={styles.errorText}>{errorMessage}</Text>
+                <TouchableOpacity
+                  onPress={() => setErrorMessage(null)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={{ marginLeft: 6 }}
+                >
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                </TouchableOpacity>
               </View>
             )}
 
             {/* Email Input */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
-              <View style={styles.inputContainer}>
+              <View
+                style={[
+                  styles.inputContainer,
+                  errorMessage ? styles.inputContainerError : null,
+                ]}
+              >
                 <Ionicons
                   name="mail-outline"
                   size={18}
-                  color={COLORS.textSecondary}
+                  color={errorMessage ? COLORS.danger : COLORS.textSecondary}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -116,11 +140,16 @@ export const LoginScreen: React.FC = () => {
             {/* Password Input */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>PASSWORD</Text>
-              <View style={styles.inputContainer}>
+              <View
+                style={[
+                  styles.inputContainer,
+                  errorMessage ? styles.inputContainerError : null,
+                ]}
+              >
                 <Ionicons
                   name="lock-closed-outline"
                   size={18}
-                  color={COLORS.textSecondary}
+                  color={errorMessage ? COLORS.danger : COLORS.textSecondary}
                   style={styles.inputIcon}
                 />
                 <TextInput
@@ -260,16 +289,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: '#FCA5A5',
-    padding: 10,
-    borderRadius: RADIUS.xs,
+    borderColor: '#F87171',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.sm,
     marginBottom: SPACING.md,
   },
   errorText: {
-    color: COLORS.danger,
-    fontSize: 12,
+    color: '#B91C1C',
+    fontSize: 13,
     flex: 1,
     fontWeight: '600',
+    lineHeight: 18,
   },
   inputGroup: {
     marginBottom: SPACING.md,
@@ -289,6 +320,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: RADIUS.sm,
     paddingHorizontal: 12,
+  },
+  inputContainerError: {
+    borderColor: '#F87171',
+    backgroundColor: '#FFF5F5',
   },
   inputIcon: {
     marginRight: 8,
