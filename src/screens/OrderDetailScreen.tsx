@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
 import { ordersApi } from '../services/ordersApi';
+import { OrderDetailSkeleton } from '../components/OrderDetailSkeleton';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatusChangeModal } from '../components/StatusChangeModal';
 import { ExtraChargesModal } from '../components/ExtraChargesModal';
@@ -32,8 +33,11 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   const { orderId } = route.params;
   const { orders, updateStatus, updateExtraCharges } = useOrders();
 
-  const [fetchedOrder, setFetchedOrder] = useState<Order | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const orderFromContext = orders.find((o) => o.id === orderId);
+  const [order, setOrder] = useState<Order | null>(orderFromContext || null);
+  const [loadingDetail, setLoadingDetail] = useState<boolean>(!orderFromContext);
+  const [isNotFound, setIsNotFound] = useState<boolean>(false);
+
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [extraChargesModalVisible, setExtraChargesModalVisible] =
     useState(false);
@@ -41,35 +45,48 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   const [isPrinting, setIsPrinting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const order = orders.find((o) => o.id === orderId) || fetchedOrder;
-
+  // Sync with context updates if order is present in context
   useEffect(() => {
-    if (!orders.find((o) => o.id === orderId) && orderId) {
+    if (orderFromContext) {
+      setOrder(orderFromContext);
+      setIsNotFound(false);
+    }
+  }, [orderFromContext]);
+
+  // If order is not in currently loaded context page, fetch it from Directus API
+  useEffect(() => {
+    if (!order && orderId) {
       setLoadingDetail(true);
       ordersApi
         .getOrderById(orderId)
         .then((res) => {
-          if (res) setFetchedOrder(res);
+          if (res) {
+            setOrder(res);
+            setIsNotFound(false);
+          } else {
+            setIsNotFound(true);
+          }
         })
-        .finally(() => setLoadingDetail(false));
+        .catch(() => {
+          setIsNotFound(true);
+        })
+        .finally(() => {
+          setLoadingDetail(false);
+        });
     }
-  }, [orderId, orders]);
+  }, [order, orderId]);
 
-  if (loadingDetail && !order) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={[styles.notFoundText, { marginTop: 12 }]}>Loading order details...</Text>
-        </View>
-      </SafeAreaView>
-    );
+  // Show shimmer skeleton while fetching
+  if ((loadingDetail && !order) || (!order && !isNotFound)) {
+    return <OrderDetailSkeleton />;
   }
 
-  if (!order) {
+  // Only show error screen if API confirmed it does not exist (404)
+  if (isNotFound && !order) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centerContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color={COLORS.danger} />
           <Text style={styles.notFoundText}>Order not found.</Text>
           <TouchableOpacity
             style={styles.backBtn}
@@ -80,6 +97,10 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
         </View>
       </SafeAreaView>
     );
+  }
+
+  if (!order) {
+    return <OrderDetailSkeleton />;
   }
 
   const cleanPhone = (order.phone || '').replace(/[\s\-\(\)]/g, '');
@@ -114,8 +135,12 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   };
 
   const handleUpdateStatus = async (newStatus: OrderStatus) => {
+    if (!order) return;
     const orderNum = order.order_id || order.id;
     const targetLabel = STATUS_MAP[newStatus]?.label || newStatus;
+
+    // Immediately update local state so the screen never drops the order
+    setOrder((prev) => (prev ? { ...prev, status: newStatus } : null));
 
     const ok = await updateStatus(order.id, newStatus);
     if (ok) {
@@ -125,6 +150,7 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       setTimeout(() => setToastMessage(null), 3000);
     } else {
       Alert.alert('Error', 'Failed to update status');
+      setOrder((prev) => (prev ? { ...prev, status: order.status } : null));
     }
   };
 
@@ -132,6 +158,11 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     charges: ExtraCharge[],
     newTotal: number
   ) => {
+    if (!order) return;
+    setOrder((prev) =>
+      prev ? { ...prev, extra_charges: charges, total: newTotal } : null
+    );
+
     const ok = await updateExtraCharges(order.id, charges, newTotal);
     if (ok) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -140,6 +171,11 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       setTimeout(() => setToastMessage(null), 3000);
     } else {
       Alert.alert('Error', 'Failed to update extra charges');
+      setOrder((prev) =>
+        prev
+          ? { ...prev, extra_charges: order.extra_charges, total: order.total }
+          : null
+      );
     }
   };
 
