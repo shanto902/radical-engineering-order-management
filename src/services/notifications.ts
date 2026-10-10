@@ -1,7 +1,12 @@
+import appConfig from '../../app.json';
 import { isRunningInExpoGo } from 'expo';
 import * as Haptics from 'expo-haptics';
 import { Platform, Vibration } from 'react-native';
 import { Order } from '../types';
+
+const easProjectId: string =
+  (appConfig as any)?.expo?.extra?.eas?.projectId ||
+  '8d4c18c5-5582-409e-911d-a06308c0fb1a';
 
 /**
  * Detect if the app is currently running inside Expo Go client.
@@ -218,7 +223,7 @@ export const notificationsService = {
       }
 
       const tokenData = await NotificationsModule.getExpoPushTokenAsync({
-        projectId: '8d4c18c5-5582-409e-911d-a06308c0fb1a',
+        projectId: easProjectId,
       });
 
       return tokenData.data || null;

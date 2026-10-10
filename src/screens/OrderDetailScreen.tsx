@@ -89,6 +89,54 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     }
   }, [order, orderId]);
 
+  // Safe Calculations (declared before any conditional return so hooks stay consistent)
+  const rawOrderItems = Array.isArray(order?.order_items)
+    ? order.order_items
+    : typeof order?.order_items === 'string' && (order.order_items as string).trim()
+    ? (() => {
+        try {
+          return JSON.parse(order.order_items as string);
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  const itemsSubtotal = rawOrderItems.reduce((sum: number, item: any) => {
+    const price = item.product?.discounted_price
+      ? Number(item.product.discounted_price)
+      : Number(item.product?.price || item.price || 0);
+    return sum + (isNaN(price) ? 0 : price) * Number(item.quantity || 1);
+  }, 0);
+
+  const extraCharges: ExtraCharge[] = order
+    ? normalizeExtraCharges(
+        order.extra_charges,
+        order.total,
+        rawOrderItems
+      )
+    : [];
+
+  const extraChargesSum = extraCharges.reduce(
+    (sum: number, ch: ExtraCharge) => sum + (Number(ch.cost || 0) || 0),
+    0
+  );
+
+  // If order total had a pre-added checkout delivery charge, sync it to local state & database
+  // (Hook is positioned before conditional returns to adhere to React Rules of Hooks)
+  useEffect(() => {
+    if (
+      order &&
+      (!order.extra_charges || order.extra_charges.length === 0) &&
+      extraCharges.length > 0
+    ) {
+      setOrder((prev) => (prev ? { ...prev, extra_charges: extraCharges } : null));
+      ordersApi
+        .updateExtraCharges(order.id, extraCharges, Number(order.total || 0))
+        .catch(() => {});
+    }
+  }, [order?.id, extraCharges.length]);
+
   // Show shimmer skeleton while fetching
   if ((loadingDetail && !order) || (!order && !isNotFound)) {
     return <OrderDetailSkeleton />;
@@ -213,51 +261,6 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       setIsPrinting(false);
     }
   };
-
-  // Safe Calculations
-  const rawOrderItems = Array.isArray(order.order_items)
-    ? order.order_items
-    : typeof order.order_items === 'string' && (order.order_items as string).trim()
-    ? (() => {
-        try {
-          return JSON.parse(order.order_items as string);
-        } catch {
-          return [];
-        }
-      })()
-    : [];
-
-  const itemsSubtotal = rawOrderItems.reduce((sum: number, item: any) => {
-    const price = item.product?.discounted_price
-      ? Number(item.product.discounted_price)
-      : Number(item.product?.price || item.price || 0);
-    return sum + (isNaN(price) ? 0 : price) * Number(item.quantity || 1);
-  }, 0);
-
-  const extraCharges: ExtraCharge[] = normalizeExtraCharges(
-    order.extra_charges,
-    order.total,
-    rawOrderItems
-  );
-
-  const extraChargesSum = extraCharges.reduce(
-    (sum: number, ch: ExtraCharge) => sum + (Number(ch.cost || 0) || 0),
-    0
-  );
-
-  // If order total had a pre-added checkout delivery charge, sync it to local state & database
-  useEffect(() => {
-    if (
-      order &&
-      (!order.extra_charges || order.extra_charges.length === 0) &&
-      extraCharges.length > 0
-    ) {
-      setOrder((prev) => (prev ? { ...prev, extra_charges: extraCharges } : null));
-      ordersApi
-        .updateExtraCharges(order.id, extraCharges, Number(order.total || 0))
-        .catch(() => {});
-    }
-  }, [order?.id, extraCharges.length]);
 
   const dateFormatted = order.placed_at
     ? new Date(order.placed_at).toLocaleString('en-US', {
