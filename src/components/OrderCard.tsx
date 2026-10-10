@@ -20,6 +20,7 @@ interface OrderCardProps {
   onChangeStatusPress: () => void;
   onInvoicePress: () => void;
   isSharingInvoice?: boolean;
+  isNew?: boolean;
 }
 
 export const OrderCard: React.FC<OrderCardProps> = ({
@@ -28,6 +29,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   onChangeStatusPress,
   onInvoicePress,
   isSharingInvoice = false,
+  isNew = false,
 }) => {
   const itemsCount = order.order_items?.length || 0;
   const totalAmount = Number(order.total || 0).toLocaleString();
@@ -76,7 +78,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
   };
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, isNew && styles.newOrderCard]}>
       {/* Clickable Card Body */}
       <TouchableOpacity
         activeOpacity={0.85}
@@ -84,19 +86,28 @@ export const OrderCard: React.FC<OrderCardProps> = ({
       >
         {/* Top Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity
-            style={styles.orderIdContainer}
-            onPress={handleCopyOrderId}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.orderIdText}>#{order.order_id || order.id}</Text>
-            <Ionicons
-              name="copy-outline"
-              size={13}
-              color={COLORS.textSecondary}
-              style={styles.copyIcon}
-            />
-          </TouchableOpacity>
+          <View style={styles.headerLeftGroup}>
+            <TouchableOpacity
+              style={styles.orderIdContainer}
+              onPress={handleCopyOrderId}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.orderIdText}>#{order.order_id || order.id}</Text>
+              <Ionicons
+                name="copy-outline"
+                size={13}
+                color={COLORS.textSecondary}
+                style={styles.copyIcon}
+              />
+            </TouchableOpacity>
+
+            {isNew && (
+              <View style={styles.newBadge}>
+                <Ionicons name="sparkles" size={10} color="#B45309" />
+                <Text style={styles.newBadgeText}>NEW</Text>
+              </View>
+            )}
+          </View>
           <StatusBadge status={order.status} size="sm" />
         </View>
 
@@ -203,17 +214,12 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 6,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+  },
+  newOrderCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    borderColor: '#FCD34D',
+    backgroundColor: '#FFFEF5',
   },
   headerRow: {
     flexDirection: 'row',
@@ -222,6 +228,30 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.surfaceVariant,
+  },
+  headerLeftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  newBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+    gap: 3,
+  },
+  newBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#B45309',
+    letterSpacing: 0.6,
   },
   orderIdContainer: {
     flexDirection: 'row',

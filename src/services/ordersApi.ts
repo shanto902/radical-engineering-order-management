@@ -39,6 +39,77 @@ export interface FetchOrdersResult {
   filterCount: number;
 }
 
+/**
+ * Normalizes repeater extra charges safely whether returned as JSON array, serialized string, or null.
+ * If charges is empty/null but the order total exceeds items subtotal (e.g. online checkout pre-added delivery fee),
+ * automatically infers and returns the already-added Delivery Charge repeater item.
+ */
+export const normalizeExtraCharges = (
+  charges: any,
+  total?: number | string | null,
+  orderItems?: any[]
+): ExtraCharge[] => {
+  let list: ExtraCharge[] = [];
+
+  if (charges) {
+    let parsed = charges;
+    if (typeof charges === 'string') {
+      try {
+        parsed = JSON.parse(charges);
+      } catch {
+        parsed = [];
+      }
+    }
+    if (Array.isArray(parsed)) {
+      list = parsed
+        .filter((c) => c && typeof c === 'object')
+        .map((c) => ({
+          name: String(c.name || 'Extra Charge').trim(),
+          cost: Number(c.cost || 0),
+        }));
+    }
+  }
+
+  // If explicit repeater is empty, check if checkout already added a delivery/extra charge to order.total
+  if (
+    list.length === 0 &&
+    total !== undefined &&
+    total !== null &&
+    orderItems !== undefined &&
+    orderItems !== null
+  ) {
+    const rawItems = Array.isArray(orderItems)
+      ? orderItems
+      : typeof orderItems === 'string' && (orderItems as string).trim()
+      ? (() => {
+          try {
+            return JSON.parse(orderItems as string);
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+    if (rawItems.length > 0) {
+      const itemsSubtotal = rawItems.reduce((sum: number, it: any) => {
+        const price = it.product?.discounted_price
+          ? Number(it.product.discounted_price)
+          : Number(it.product?.price || it.price || 0);
+        return sum + (isNaN(price) ? 0 : price) * Number(it.quantity || 1);
+      }, 0);
+
+      const numTotal = Number(total || 0);
+      const diff = Math.round((numTotal - itemsSubtotal) * 100) / 100;
+
+      if (diff > 0) {
+        list = [{ name: 'Delivery Charge', cost: diff }];
+      }
+    }
+  }
+
+  return list;
+};
+
 const CACHE_KEYS = {
   ORDERS_PAGE_1: '@radical_cache_orders_page_1',
   METRICS: '@radical_cache_metrics',
@@ -232,6 +303,61 @@ export const ordersApi = {
   },
 
   /**
+   * Read settings singleton collection from Directus (delivery_charge and last_revalidate_time).
+   */
+  async getSettings(): Promise<{ delivery_charge: number; last_revalidate_time?: string } | null> {
+    try {
+      const token = await directus.getToken();
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(
+        `${APP_CONFIG.apiBaseUrl}/items/settings?fields=id,delivery_charge,last_revalidate_time`,
+        { headers }
+      );
+      if (res.ok) {
+        const json = await res.json();
+        return {
+          delivery_charge: Number(json.data?.delivery_charge ?? 120),
+          last_revalidate_time: json.data?.last_revalidate_time
+            ? String(json.data.last_revalidate_time)
+            : undefined,
+        };
+      }
+    } catch (err) {
+      console.warn('Failed to fetch settings:', err);
+    }
+    return null;
+  },
+
+  /**
+   * Update the default delivery_charge in Directus settings singleton collection.
+   */
+  async updateDeliveryCharge(amount: number): Promise<boolean> {
+    try {
+      const token = await directus.getToken();
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(`${APP_CONFIG.apiBaseUrl}/items/settings`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          delivery_charge: Math.round(Number(amount) * 100) / 100,
+        }),
+      });
+
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to update delivery charge in settings:', err);
+      return false;
+    }
+  },
+
+  /**
    * Fetch single order by ID with all product relations
    */
   async getOrderById(id: string): Promise<Order | null> {
@@ -261,16 +387,17 @@ export const ordersApi = {
   },
 
   /**
-   * Update extra charges and recalculated total
+   * Update extra charges and recalculated total with clean array sanitization
    */
   async updateExtraCharges(
     orderId: string,
     extraCharges: ExtraCharge[],
     newTotal: number
   ): Promise<Order> {
+    const sanitized = normalizeExtraCharges(extraCharges);
     const result = await directus.request(
       updateItem('orders' as any, orderId, {
-        extra_charges: extraCharges,
+        extra_charges: sanitized,
         total: Math.round(newTotal * 100) / 100,
       } as any)
     );

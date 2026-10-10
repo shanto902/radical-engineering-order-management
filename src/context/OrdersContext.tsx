@@ -7,6 +7,7 @@ import React, {
   useRef,
 } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Order,
   OrderStatus,
@@ -56,6 +57,8 @@ interface OrdersContextType {
     newTotal: number
   ) => Promise<boolean>;
   metrics: OrderSummaryMetrics;
+  defaultDeliveryCharge: number;
+  updateDefaultDeliveryCharge: (charge: number) => Promise<boolean>;
   unreadNewOrders: number;
   clearUnreadCount: () => void;
   isPollingEnabled: boolean;
@@ -64,6 +67,10 @@ interface OrdersContextType {
   activeNewOrderAlert: Order | null;
   dismissNewOrderAlert: () => void;
   triggerDemoAlert: (order: Order) => void;
+  newOrderIds: Set<string>;
+  markOrderAsViewed: (orderId: string) => void;
+  isOrderNew: (orderId: string, placedAt?: string, status?: OrderStatus) => boolean;
+  clearAllNewOrders: () => void;
 }
 
 const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
@@ -92,6 +99,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
   const [activeNewOrderAlert, setActiveNewOrderAlert] = useState<Order | null>(null);
 
+  // Set of IDs representing actively unread/new orders
+  const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set());
+  // Set of IDs representing orders already viewed by staff
+  const [viewedOrderIds, setViewedOrderIds] = useState<Set<string>>(new Set());
+
   // References to eliminate unnecessary DB queries during polling
   const lastKnownLatestIdRef = useRef<string | null>(null);
   const lastRevalidateTimeRef = useRef<string | null>(null);
@@ -112,6 +124,8 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  const [defaultDeliveryCharge, setDefaultDeliveryCharge] = useState<number>(120);
+
   // Load cached orders & metrics instantly on app launch
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -125,7 +139,97 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         setLoading(false);
       }
     });
+
+    // Fetch initial delivery charge and store settings
+    ordersApi.getSettings().then((st) => {
+      if (st && typeof st.delivery_charge === 'number') {
+        setDefaultDeliveryCharge(st.delivery_charge);
+      }
+    });
   }, [isAuthenticated]);
+
+  const updateDefaultDeliveryCharge = async (newCharge: number): Promise<boolean> => {
+    setDefaultDeliveryCharge(newCharge);
+    const ok = await ordersApi.updateDeliveryCharge(newCharge);
+    if (!ok) {
+      ordersApi.getSettings().then((st) => {
+        if (st && typeof st.delivery_charge === 'number') {
+          setDefaultDeliveryCharge(st.delivery_charge);
+        }
+      });
+    }
+    return ok;
+  };
+
+  // Load viewed orders from local storage on mount
+  useEffect(() => {
+    AsyncStorage.getItem('@radical_viewed_order_ids')
+      .then((val) => {
+        if (val) {
+          try {
+            const arr = JSON.parse(val);
+            if (Array.isArray(arr)) {
+              setViewedOrderIds(new Set(arr));
+            }
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const markOrderAsViewed = useCallback((orderId: string) => {
+    setNewOrderIds((prev) => {
+      const next = new Set(prev);
+      next.delete(orderId);
+      return next;
+    });
+    setViewedOrderIds((prev) => {
+      const next = new Set(prev).add(orderId);
+      const arr = Array.from(next).slice(-300);
+      AsyncStorage.setItem('@radical_viewed_order_ids', JSON.stringify(arr)).catch(() => {});
+      return next;
+    });
+    setUnreadNewOrders((prev) => Math.max(0, prev - 1));
+    setActiveNewOrderAlert((prev) => (prev?.id === orderId ? null : prev));
+  }, []);
+
+  const isOrderNew = useCallback(
+    (orderId: string, placedAt?: string, status?: OrderStatus) => {
+      if (newOrderIds.has(orderId)) return true;
+      if (viewedOrderIds.has(orderId)) return false;
+
+      // If status is pending and placed within last 3 hours, mark as new until staff views it
+      if (status === 'pending' && placedAt) {
+        try {
+          const placedTime = new Date(placedAt).getTime();
+          const now = Date.now();
+          const hoursAgo = (now - placedTime) / (1000 * 60 * 60);
+          if (hoursAgo >= 0 && hoursAgo <= 3) {
+            return true;
+          }
+        } catch {}
+      }
+
+      return false;
+    },
+    [newOrderIds, viewedOrderIds]
+  );
+
+  const clearAllNewOrders = useCallback(() => {
+    setViewedOrderIds((prev) => {
+      const next = new Set(prev);
+      newOrderIds.forEach((id) => next.add(id));
+      orders.forEach((o) => {
+        if (o.status === 'pending') next.add(o.id);
+      });
+      const arr = Array.from(next).slice(-300);
+      AsyncStorage.setItem('@radical_viewed_order_ids', JSON.stringify(arr)).catch(() => {});
+      return next;
+    });
+    setNewOrderIds(new Set());
+    setUnreadNewOrders(0);
+    setActiveNewOrderAlert(null);
+  }, [newOrderIds, orders]);
 
   /**
    * Fetch fresh order metrics from Directus via fast database aggregation
@@ -310,6 +414,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
             // Play alert immediately!
             notificationsService.notifyNewOrder(latestMeta as any);
             setActiveNewOrderAlert(latestMeta as any);
+            setNewOrderIds((prev) => new Set(prev).add(latestMeta.id));
             setUnreadNewOrders((prev) => prev + 1);
             needsRefresh = true;
           } else {
@@ -373,6 +478,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
               lastKnownLatestIdRef.current = newOrder.id;
               notificationsService.notifyNewOrder(newOrder as any);
               setActiveNewOrderAlert(newOrder as any);
+              setNewOrderIds((prev) => new Set(prev).add(newOrder.id));
               setUnreadNewOrders((prev) => prev + 1);
               loadFirstPage();
             }
@@ -499,8 +605,10 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         updateStatus,
         updateExtraCharges,
         metrics,
+        defaultDeliveryCharge,
+        updateDefaultDeliveryCharge,
         unreadNewOrders,
-        clearUnreadCount,
+        clearUnreadCount: clearAllNewOrders,
         isPollingEnabled,
         togglePolling,
         isRealtimeConnected,
@@ -509,8 +617,13 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         triggerDemoAlert: (order: Order) => {
           notificationsService.notifyNewOrder(order);
           setActiveNewOrderAlert(order);
+          setNewOrderIds((prev) => new Set(prev).add(order.id));
           setUnreadNewOrders((prev) => prev + 1);
         },
+        newOrderIds,
+        markOrderAsViewed,
+        isOrderNew,
+        clearAllNewOrders,
       }}
     >
       {children}

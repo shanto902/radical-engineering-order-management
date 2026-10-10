@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -55,7 +55,13 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
     unreadNewOrders,
     clearUnreadCount,
     isPollingEnabled,
+    activeNewOrderAlert,
+    dismissNewOrderAlert,
+    isOrderNew,
+    markOrderAsViewed,
   } = useOrders();
+
+  const flatListRef = useRef<FlatList<Order>>(null);
 
   const [selectedOrderForStatus, setSelectedOrderForStatus] =
     useState<Order | null>(null);
@@ -120,6 +126,33 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
     }
   };
 
+  const handlePressNewOrdersBadge = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
+    // 1. If not on an 'all' or 'pending' filter, switch so the new order is visible
+    if (statusFilter !== 'all' && statusFilter !== 'pending') {
+      setStatusFilter('pending');
+    }
+    // 2. Clear any active search query that might hide the new order
+    if (searchQuery) {
+      setSearchQuery('');
+    }
+    // 3. Scroll to the top of the list smoothly
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+    // 4. Target the active new order or first unread order
+    const targetOrder =
+      activeNewOrderAlert ||
+      orders.find((o) => isOrderNew(o.id, o.placed_at, o.status));
+
+    if (targetOrder) {
+      markOrderAsViewed(targetOrder.id);
+      navigation.navigate('OrderDetail', { orderId: targetOrder.id });
+    } else {
+      clearUnreadCount();
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Top App Header */}
@@ -143,7 +176,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
           {unreadNewOrders > 0 && (
             <TouchableOpacity
               style={styles.notificationPill}
-              onPress={clearUnreadCount}
+              onPress={handlePressNewOrdersBadge}
             >
               <Ionicons name="notifications" size={15} color={COLORS.white} />
               <Text style={styles.notificationPillText}>
@@ -269,6 +302,50 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
         </ScrollView>
       </View>
 
+      {/* Active New Order Alert Banner */}
+      {activeNewOrderAlert && (
+        <TouchableOpacity
+          style={styles.newOrderAlertBanner}
+          onPress={() => {
+            const alertOrder = activeNewOrderAlert;
+            dismissNewOrderAlert();
+            markOrderAsViewed(alertOrder.id);
+            navigation.navigate('OrderDetail', { orderId: alertOrder.id });
+          }}
+          activeOpacity={0.9}
+        >
+          <View style={styles.newOrderAlertLeft}>
+            <View style={styles.newOrderAlertIconBadge}>
+              <Ionicons name="notifications" size={16} color={COLORS.white} />
+            </View>
+            <View style={styles.newOrderAlertTextCol}>
+              <Text style={styles.newOrderAlertTitle} numberOfLines={1} ellipsizeMode="tail">
+                NEW ORDER ARRIVED
+              </Text>
+              <Text style={styles.newOrderAlertSub} numberOfLines={1} ellipsizeMode="tail">
+                #{activeNewOrderAlert.order_id || activeNewOrderAlert.id} • {activeNewOrderAlert.name || 'Customer'} (৳{Number(activeNewOrderAlert.total || 0).toLocaleString()})
+              </Text>
+            </View>
+          </View>
+          <View style={styles.newOrderAlertRight}>
+            <View style={styles.newOrderAlertActionBtn}>
+              <Text style={styles.newOrderAlertActionText}>Open</Text>
+              <Ionicons name="arrow-forward" size={12} color={COLORS.white} />
+            </View>
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                dismissNewOrderAlert();
+              }}
+              style={styles.newOrderAlertDismissBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close" size={16} color="#92400E" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      )}
+
       {/* Orders List */}
       {loading && !refreshing ? (
         <View style={styles.centerContainer}>
@@ -285,6 +362,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={orders}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -315,9 +393,11 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
           renderItem={({ item }) => (
             <OrderCard
               order={item}
-              onPress={() =>
-                navigation.navigate('OrderDetail', { orderId: item.id })
-              }
+              isNew={isOrderNew(item.id, item.placed_at, item.status)}
+              onPress={() => {
+                markOrderAsViewed(item.id);
+                navigation.navigate('OrderDetail', { orderId: item.id });
+              }}
               onChangeStatusPress={() => handleOpenStatusModal(item)}
               onInvoicePress={() => handleShareInvoice(item)}
               isSharingInvoice={sharingOrderId === item.id}
@@ -616,6 +696,80 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textMuted,
     fontStyle: 'italic',
+  },
+  newOrderAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: RADIUS.sm,
+    marginHorizontal: SPACING.md,
+    marginTop: 8,
+    marginBottom: 4,
+    padding: 10,
+  },
+  newOrderAlertLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+    gap: 10,
+    marginRight: 10,
+  },
+  newOrderAlertIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#D97706',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  newOrderAlertTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  newOrderAlertTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#92400E',
+    letterSpacing: 0.5,
+  },
+  newOrderAlertSub: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#78350F',
+    marginTop: 2,
+  },
+  newOrderAlertRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+    gap: 6,
+  },
+  newOrderAlertActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#B45309',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.xs,
+    gap: 4,
+  },
+  newOrderAlertActionText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  newOrderAlertDismissBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: RADIUS.xs,
+    backgroundColor: '#FDE68A',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

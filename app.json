@@ -11,7 +11,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",
-          "resizeMode": "contain",
+          "resizeMode": "native",
           "backgroundColor": "#3c1100"
         }
       ],
@@ -35,11 +35,7 @@
       "package": "com.radicalengineering.orders",
       "googleServicesFile": "./google-services.json",
       "versionCode": 1,
-      "permissions": [
-        "INTERNET",
-        "VIBRATE",
-        "RECEIVE_BOOT_COMPLETED"
-      ]
+      "permissions": ["INTERNET", "VIBRATE", "RECEIVE_BOOT_COMPLETED"]
     },
     "web": {
       "favicon": "./assets/favicon.png",

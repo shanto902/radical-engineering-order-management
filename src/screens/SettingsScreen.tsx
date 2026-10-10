@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  TextInput,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,11 +28,26 @@ export const SettingsScreen: React.FC = () => {
     lastSynced,
     refreshOrders,
     triggerDemoAlert,
+    defaultDeliveryCharge,
+    updateDefaultDeliveryCharge,
   } = useOrders();
   const { user, logout } = useAuth();
 
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [isSyncingToken, setIsSyncingToken] = useState(false);
+
+  // Store delivery charge state
+  const [deliveryChargeInput, setDeliveryChargeInput] = useState<string>(
+    String(defaultDeliveryCharge || 120)
+  );
+  const [isUpdatingDelivery, setIsUpdatingDelivery] = useState(false);
+  const [deliveryUpdatedSuccess, setDeliveryUpdatedSuccess] = useState(false);
+
+  useEffect(() => {
+    if (defaultDeliveryCharge) {
+      setDeliveryChargeInput(String(defaultDeliveryCharge));
+    }
+  }, [defaultDeliveryCharge]);
 
   useEffect(() => {
     notificationsService.getExpoPushToken().then(setPushToken);
@@ -90,6 +106,32 @@ export const SettingsScreen: React.FC = () => {
     if (pushToken) {
       await Clipboard.setStringAsync(pushToken);
       Alert.alert('Copied', 'Expo Push Token copied to clipboard');
+    }
+  };
+
+  const handleSaveDeliveryCharge = async () => {
+    const val = parseFloat(deliveryChargeInput.trim());
+    if (isNaN(val) || val < 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid delivery charge amount.');
+      return;
+    }
+    try {
+      setIsUpdatingDelivery(true);
+      const ok = await updateDefaultDeliveryCharge(val);
+      if (ok) {
+        setDeliveryUpdatedSuccess(true);
+        setTimeout(() => setDeliveryUpdatedSuccess(false), 3000);
+        Alert.alert(
+          'Settings Updated',
+          `Store delivery charge has been successfully updated to ৳${val.toLocaleString()} in Directus settings.`
+        );
+      } else {
+        Alert.alert('Error', 'Failed to update delivery charge on server.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Could not update delivery charge.');
+    } finally {
+      setIsUpdatingDelivery(false);
     }
   };
 
@@ -182,6 +224,81 @@ export const SettingsScreen: React.FC = () => {
               Test Order Alert & Vibration
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Store Delivery Charge (Settings Singleton) */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.cardTitle}>STORE DELIVERY CHARGE</Text>
+              <Text style={styles.cardDesc}>
+                Global default delivery fee stored in Directus settings singleton. Used for new orders and quick adjustments.
+              </Text>
+            </View>
+            <View style={styles.currentDeliveryBadge}>
+              <Text style={styles.currentDeliveryBadgeLabel}>Current</Text>
+              <Text style={styles.currentDeliveryBadgeVal}>৳{defaultDeliveryCharge}</Text>
+            </View>
+          </View>
+
+          {/* Quick Preset Buttons */}
+          <View style={styles.deliveryPresetsRow}>
+            {[60, 100, 120, 150].map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={[
+                  styles.deliveryPresetBtn,
+                  deliveryChargeInput === String(amt) && styles.deliveryPresetBtnActive,
+                ]}
+                onPress={() => setDeliveryChargeInput(String(amt))}
+              >
+                <Text
+                  style={[
+                    styles.deliveryPresetBtnText,
+                    deliveryChargeInput === String(amt) && styles.deliveryPresetBtnTextActive,
+                  ]}
+                >
+                  ৳{amt}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Input & Update Action */}
+          <View style={styles.deliveryInputRow}>
+            <View style={styles.deliveryInputWrapper}>
+              <Text style={styles.currencyPrefix}>৳</Text>
+              <TextInput
+                style={styles.deliveryTextInput}
+                placeholder="Amount (e.g. 120)"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="numeric"
+                value={deliveryChargeInput}
+                onChangeText={setDeliveryChargeInput}
+              />
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.saveDeliveryBtn,
+                isUpdatingDelivery && { opacity: 0.7 },
+              ]}
+              onPress={handleSaveDeliveryCharge}
+              disabled={isUpdatingDelivery}
+            >
+              <Ionicons
+                name={deliveryUpdatedSuccess ? 'checkmark' : 'cloud-upload-outline'}
+                size={16}
+                color={COLORS.white}
+              />
+              <Text style={styles.saveDeliveryBtnText}>
+                {isUpdatingDelivery
+                  ? 'Saving...'
+                  : deliveryUpdatedSuccess
+                  ? 'Saved!'
+                  : 'Update'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* System Sync & Connection */}
@@ -532,6 +649,101 @@ const styles = StyleSheet.create({
   },
   logoutBtnText: {
     color: COLORS.danger,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  currentDeliveryBadge: {
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.xs,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.secondary,
+  },
+  currentDeliveryBadgeLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+  },
+  currentDeliveryBadgeVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primary,
+    marginTop: 1,
+  },
+  deliveryPresetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  deliveryPresetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.xs,
+    backgroundColor: COLORS.surfaceVariant,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  deliveryPresetBtnActive: {
+    backgroundColor: COLORS.primaryLight,
+    borderColor: COLORS.primary,
+  },
+  deliveryPresetBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  deliveryPresetBtnTextActive: {
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
+  deliveryInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  deliveryInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.xs,
+    paddingHorizontal: 12,
+  },
+  currencyPrefix: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginRight: 6,
+  },
+  deliveryTextInput: {
+    flex: 1,
+    paddingVertical: 9,
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  saveDeliveryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: RADIUS.xs,
+  },
+  saveDeliveryBtnText: {
+    color: COLORS.white,
     fontSize: 13,
     fontWeight: '700',
   },

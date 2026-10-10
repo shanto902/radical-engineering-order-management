@@ -2,6 +2,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { APP_CONFIG } from '../constants/config';
 import { Order } from '../types';
+import { normalizeExtraCharges } from './ordersApi';
 
 export const invoiceService = {
   /**
@@ -66,21 +67,13 @@ export const invoiceService = {
           </tr>
         `;
 
-    let rawExtraCharges: any[] = [];
-    if (Array.isArray(order.extra_charges)) {
-      rawExtraCharges = order.extra_charges;
-    } else if (
-      typeof order.extra_charges === 'string' &&
-      (order.extra_charges as string).trim()
-    ) {
-      try {
-        rawExtraCharges = JSON.parse(order.extra_charges);
-      } catch {
-        rawExtraCharges = [];
-      }
-    }
+    const extraCharges = normalizeExtraCharges(
+      order.extra_charges,
+      order.total,
+      rawItems
+    );
 
-    const extraChargesHtml = rawExtraCharges
+    const extraChargesHtml = extraCharges
       .map((ch: any) => {
         const cost = Number(ch.cost || 0);
         return `

@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
-import { ordersApi } from '../services/ordersApi';
+import { ordersApi, normalizeExtraCharges } from '../services/ordersApi';
 import { OrderDetailSkeleton } from '../components/OrderDetailSkeleton';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatusChangeModal } from '../components/StatusChangeModal';
@@ -31,12 +31,25 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   navigation,
 }) => {
   const { orderId } = route.params;
-  const { orders, updateStatus, updateExtraCharges } = useOrders();
+  const {
+    orders,
+    updateStatus,
+    updateExtraCharges,
+    defaultDeliveryCharge,
+    markOrderAsViewed,
+  } = useOrders();
 
   const orderFromContext = orders.find((o) => o.id === orderId);
   const [order, setOrder] = useState<Order | null>(orderFromContext || null);
   const [loadingDetail, setLoadingDetail] = useState<boolean>(!orderFromContext);
   const [isNotFound, setIsNotFound] = useState<boolean>(false);
+
+  // Automatically mark this order as viewed so NEW badges are cleared
+  useEffect(() => {
+    if (orderId) {
+      markOrderAsViewed(orderId);
+    }
+  }, [orderId, markOrderAsViewed]);
 
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [extraChargesModalVisible, setExtraChargesModalVisible] =
@@ -221,23 +234,30 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     return sum + (isNaN(price) ? 0 : price) * Number(item.quantity || 1);
   }, 0);
 
-  const rawExtraCharges: ExtraCharge[] = Array.isArray(order.extra_charges)
-    ? order.extra_charges
-    : typeof order.extra_charges === 'string' &&
-      (order.extra_charges as string).trim()
-    ? (() => {
-        try {
-          return JSON.parse(order.extra_charges as string);
-        } catch {
-          return [];
-        }
-      })()
-    : [];
+  const extraCharges: ExtraCharge[] = normalizeExtraCharges(
+    order.extra_charges,
+    order.total,
+    rawOrderItems
+  );
 
-  const extraChargesSum = rawExtraCharges.reduce(
-    (sum: number, ch: any) => sum + (Number(ch.cost || 0) || 0),
+  const extraChargesSum = extraCharges.reduce(
+    (sum: number, ch: ExtraCharge) => sum + (Number(ch.cost || 0) || 0),
     0
   );
+
+  // If order total had a pre-added checkout delivery charge, sync it to local state & database
+  useEffect(() => {
+    if (
+      order &&
+      (!order.extra_charges || order.extra_charges.length === 0) &&
+      extraCharges.length > 0
+    ) {
+      setOrder((prev) => (prev ? { ...prev, extra_charges: extraCharges } : null));
+      ordersApi
+        .updateExtraCharges(order.id, extraCharges, Number(order.total || 0))
+        .catch(() => {});
+    }
+  }, [order?.id, extraCharges.length]);
 
   const dateFormatted = order.placed_at
     ? new Date(order.placed_at).toLocaleString('en-US', {
@@ -380,29 +400,77 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
         {/* Extra Charges Section */}
         <View style={styles.card}>
           <View style={styles.cardHeaderWithAction}>
-            <Text style={styles.cardHeaderTitle}>EXTRA CHARGES / ADJUSTMENTS</Text>
+            <View>
+              <Text style={styles.cardHeaderTitle}>EXTRA CHARGES / ADJUSTMENTS</Text>
+              <Text style={styles.cardHeaderSubtitle}>
+                Repeater items (delivery, installation, packaging)
+              </Text>
+            </View>
             <TouchableOpacity
               onPress={() => setExtraChargesModalVisible(true)}
               style={styles.smallEditLink}
             >
-              <Ionicons name="pencil" size={14} color={COLORS.accent} />
-              <Text style={styles.smallEditLinkText}>Edit Charges</Text>
+              <Ionicons name="pencil" size={13} color={COLORS.primary} />
+              <Text style={styles.smallEditLinkText}>Manage</Text>
             </TouchableOpacity>
           </View>
 
-          {(!order.extra_charges || order.extra_charges.length === 0) ? (
-            <Text style={styles.noExtraChargesText}>
-              No extra charges (delivery, installation, etc.) added yet.
-            </Text>
+          {extraCharges.length === 0 ? (
+            <View style={styles.emptyExtraChargesBox}>
+              <Text style={styles.noExtraChargesText}>
+                No extra charges added yet.
+              </Text>
+              <View style={styles.quickAddRow}>
+                <TouchableOpacity
+                  style={styles.addChargeButton}
+                  onPress={() => setExtraChargesModalVisible(true)}
+                >
+                  <Ionicons name="add-circle" size={15} color={COLORS.white} />
+                  <Text style={styles.addChargeButtonText}>Add Extra Charge</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickPresetChip}
+                  onPress={async () => {
+                    const updated = [{ name: 'Delivery Charge', cost: defaultDeliveryCharge }];
+                    const newTotal = itemsSubtotal + defaultDeliveryCharge;
+                    await handleSaveExtraCharges(updated, newTotal);
+                  }}
+                >
+                  <Ionicons name="flash-outline" size={13} color={COLORS.primary} />
+                  <Text style={styles.quickPresetChipText}>
+                    + Delivery (৳{defaultDeliveryCharge})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           ) : (
-            order.extra_charges.map((ch, idx) => (
-              <View key={idx} style={styles.extraChargeItem}>
-                <Text style={styles.extraChargeName}>{ch.name}</Text>
-                <Text style={styles.extraChargeAmount}>
-                  ৳{Number(ch.cost).toLocaleString()}
+            <View style={styles.extraChargesList}>
+              {extraCharges.map((ch, idx) => (
+                <View key={idx} style={styles.extraChargeItem}>
+                  <View style={styles.extraChargeItemLeft}>
+                    <View style={styles.extraChargeIcon}>
+                      <Ionicons name="pricetag-outline" size={12} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.extraChargeName}>{ch.name}</Text>
+                  </View>
+                  <Text style={styles.extraChargeAmount}>
+                    + ৳{Number(ch.cost).toLocaleString()}
+                  </Text>
+                </View>
+              ))}
+              <View style={styles.extraChargesFooter}>
+                <TouchableOpacity
+                  style={styles.addMoreChargesLink}
+                  onPress={() => setExtraChargesModalVisible(true)}
+                >
+                  <Ionicons name="add" size={15} color={COLORS.primary} />
+                  <Text style={styles.addMoreChargesLinkText}>Add / Edit More</Text>
+                </TouchableOpacity>
+                <Text style={styles.extraChargesTotalBadge}>
+                  Total: ৳{extraChargesSum.toLocaleString()}
                 </Text>
               </View>
-            ))
+            </View>
           )}
         </View>
 
@@ -415,8 +483,10 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
           </View>
           {extraChargesSum > 0 && (
             <View style={styles.summaryLine}>
-              <Text style={styles.summaryLabel}>Extra Services / Delivery</Text>
-              <Text style={styles.summaryValue}>৳{extraChargesSum.toLocaleString()}</Text>
+              <Text style={styles.summaryLabel}>Extra Charges & Delivery</Text>
+              <Text style={[styles.summaryValue, { color: COLORS.primary }]}>
+                + ৳{extraChargesSum.toLocaleString()}
+              </Text>
             </View>
           )}
           <View style={[styles.summaryLine, styles.grandTotalLine]}>
@@ -708,24 +778,117 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     marginLeft: 10,
   },
+  cardHeaderSubtitle: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  emptyExtraChargesBox: {
+    paddingVertical: 10,
+  },
   noExtraChargesText: {
     fontSize: 12,
     color: COLORS.textMuted,
     fontStyle: 'italic',
+    marginBottom: 10,
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  addChargeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.xs,
+  },
+  addChargeButtonText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quickPresetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.surfaceVariant,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: RADIUS.xs,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  quickPresetChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  extraChargesList: {
+    marginTop: 6,
   },
   extraChargeItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceVariant,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: RADIUS.xs,
+    marginBottom: 6,
+  },
+  extraChargeItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  extraChargeIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   extraChargeName: {
     fontSize: 13,
+    fontWeight: '600',
     color: COLORS.text,
   },
   extraChargeAmount: {
     fontSize: 13,
     fontWeight: '700',
-    color: COLORS.pending,
+    color: COLORS.primary,
+  },
+  extraChargesFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  addMoreChargesLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+  },
+  addMoreChargesLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  extraChargesTotalBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   summaryLine: {
     flexDirection: 'row',
