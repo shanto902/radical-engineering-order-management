@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -39,11 +39,13 @@ function MainApp() {
   }, []);
 
   return (
-    <NavigationContainer ref={navigationRef}>
-      <StatusBar style="dark" />
+    <View style={{ flex: 1 }}>
+      <NavigationContainer ref={navigationRef}>
+        <StatusBar style="dark" />
+        <AppNavigator />
+      </NavigationContainer>
       <NoInternetBanner />
-      <AppNavigator />
-    </NavigationContainer>
+    </View>
   );
 }
 

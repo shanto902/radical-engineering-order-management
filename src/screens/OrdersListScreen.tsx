@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -69,6 +69,15 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
     useState<Order | null>(null);
   const [sharingOrderId, setSharingOrderId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Show toast notification when refresh encounters offline error while cached orders are displayed
+  useEffect(() => {
+    if (error && orders.length > 0) {
+      setToastMessage('⚠️ No internet connection. Showing cached orders.');
+      const t = setTimeout(() => setToastMessage(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [error, orders.length]);
 
   const handleOpenStatusModal = (order: Order) => {
     if (!isOnline) {
@@ -223,7 +232,14 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
 
           <TouchableOpacity
             style={styles.refreshIconBtn}
-            onPress={refreshOrders}
+            onPress={async () => {
+              const ok = await checkConnection();
+              if (!ok) {
+                setToastMessage('⚠️ No internet connection. Showing cached orders.');
+                setTimeout(() => setToastMessage(null), 4000);
+              }
+              refreshOrders();
+            }}
             disabled={refreshing}
           >
             <Ionicons
@@ -388,11 +404,35 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
           <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>Loading orders...</Text>
         </View>
-      ) : error ? (
+      ) : error && orders.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="alert-circle-outline" size={44} color={COLORS.danger} />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={refreshOrders}>
+          <Ionicons
+            name={
+              !isOnline || error.toLowerCase().includes('internet')
+                ? 'cloud-offline-outline'
+                : 'alert-circle-outline'
+            }
+            size={52}
+            color={COLORS.danger}
+          />
+          <Text style={styles.emptyTitle}>
+            {!isOnline || error.toLowerCase().includes('internet')
+              ? 'No Internet Connection'
+              : 'Connection Error'}
+          </Text>
+          <Text style={styles.emptySubtitle}>
+            {!isOnline || error.toLowerCase().includes('internet')
+              ? 'Unable to sync orders. Please check your internet connection and try again.'
+              : error}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={async () => {
+              await checkConnection();
+              refreshOrders();
+            }}
+          >
+            <Ionicons name="refresh" size={15} color={COLORS.white} />
             <Text style={styles.retryBtnText}>Retry Connection</Text>
           </TouchableOpacity>
         </View>
@@ -407,7 +447,14 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={refreshOrders}
+              onRefresh={async () => {
+                const ok = await checkConnection();
+                if (!ok) {
+                  setToastMessage('⚠️ No internet connection. Showing cached orders.');
+                  setTimeout(() => setToastMessage(null), 4000);
+                }
+                refreshOrders();
+              }}
               tintColor={COLORS.primary}
               colors={[COLORS.primary]}
             />
@@ -441,17 +488,43 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
           )}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons
-                name="file-tray-outline"
-                size={48}
-                color={COLORS.textMuted}
-              />
-              <Text style={styles.emptyTitle}>No Orders Found</Text>
-              <Text style={styles.emptySubtitle}>
-                {searchQuery
-                  ? 'No orders match your search query.'
-                  : `No orders in "${statusFilter}" status.`}
-              </Text>
+              {!isOnline || (error && error.toLowerCase().includes('internet')) ? (
+                <>
+                  <Ionicons
+                    name="cloud-offline-outline"
+                    size={48}
+                    color={COLORS.danger}
+                  />
+                  <Text style={styles.emptyTitle}>No Internet Connection</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Cannot load orders while offline. Connect to the internet and tap retry.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.retryBtn}
+                    onPress={async () => {
+                      await checkConnection();
+                      refreshOrders();
+                    }}
+                  >
+                    <Ionicons name="refresh" size={14} color={COLORS.white} />
+                    <Text style={styles.retryBtnText}>Retry Connection</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Ionicons
+                    name="file-tray-outline"
+                    size={48}
+                    color={COLORS.textMuted}
+                  />
+                  <Text style={styles.emptyTitle}>No Orders Found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchQuery
+                      ? 'No orders match your search query.'
+                      : `No orders in "${statusFilter}" status.`}
+                  </Text>
+                </>
+              )}
             </View>
           }
         />
@@ -665,6 +738,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: RADIUS.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   retryBtnText: {
     color: COLORS.white,

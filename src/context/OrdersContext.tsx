@@ -60,6 +60,8 @@ interface OrdersContextType {
   metrics: OrderSummaryMetrics;
   defaultDeliveryCharge: number;
   updateDefaultDeliveryCharge: (charge: number) => Promise<boolean>;
+  defaultPerKgCharge: number;
+  updateDefaultPerKgCharge: (charge: number) => Promise<boolean>;
   unreadNewOrders: number;
   clearUnreadCount: () => void;
   isPollingEnabled: boolean;
@@ -80,7 +82,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { isAuthenticated, user: currentUser } = useAuth();
-  const { notifyOnline, notifyOffline, subscribeOnOnline } = useNetwork();
+  const { isOnline, notifyOnline, notifyOffline, subscribeOnOnline } = useNetwork();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -127,6 +129,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [searchQuery]);
 
   const [defaultDeliveryCharge, setDefaultDeliveryCharge] = useState<number>(120);
+  const [defaultPerKgCharge, setDefaultPerKgCharge] = useState<number>(0);
 
   // Load cached orders & metrics instantly on app launch
   useEffect(() => {
@@ -147,6 +150,9 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       if (st && typeof st.delivery_charge === 'number') {
         setDefaultDeliveryCharge(st.delivery_charge);
       }
+      if (st && typeof st.per_kg_charge === 'number') {
+        setDefaultPerKgCharge(st.per_kg_charge);
+      }
     });
   }, [isAuthenticated]);
 
@@ -157,6 +163,19 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       ordersApi.getSettings().then((st) => {
         if (st && typeof st.delivery_charge === 'number') {
           setDefaultDeliveryCharge(st.delivery_charge);
+        }
+      });
+    }
+    return ok;
+  };
+
+  const updateDefaultPerKgCharge = async (newCharge: number): Promise<boolean> => {
+    setDefaultPerKgCharge(newCharge);
+    const ok = await ordersApi.updatePerKgCharge(newCharge);
+    if (!ok) {
+      ordersApi.getSettings().then((st) => {
+        if (st && typeof st.per_kg_charge === 'number') {
+          setDefaultPerKgCharge(st.per_kg_charge);
         }
       });
     }
@@ -318,14 +337,34 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         notifyOnline();
       } catch (err: any) {
         console.warn('Orders load failed:', err);
-        setError(err?.message || 'Failed to sync orders');
+        const isOffline =
+          !isOnline ||
+          err?.message?.includes('internet') ||
+          err?.message?.includes('Network') ||
+          err?.message?.includes('network') ||
+          err?.message?.includes('Failed to fetch') ||
+          err?.name === 'AbortError';
+        const msg = isOffline
+          ? 'No internet connection'
+          : err?.message || 'Failed to sync orders';
+        setError(msg);
         notifyOffline();
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [isAuthenticated, statusFilter, debouncedSearch, fetchMetrics, orders.length, metrics, notifyOnline, notifyOffline]
+    [
+      isAuthenticated,
+      statusFilter,
+      debouncedSearch,
+      fetchMetrics,
+      orders.length,
+      metrics,
+      isOnline,
+      notifyOnline,
+      notifyOffline,
+    ]
   );
 
   // Auto-refresh orders whenever network connectivity is restored
@@ -670,6 +709,8 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         metrics,
         defaultDeliveryCharge,
         updateDefaultDeliveryCharge,
+        defaultPerKgCharge,
+        updateDefaultPerKgCharge,
         unreadNewOrders,
         clearUnreadCount: clearAllNewOrders,
         isPollingEnabled,

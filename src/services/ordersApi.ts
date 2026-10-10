@@ -209,7 +209,15 @@ export const ordersApi = {
         headers.Authorization = `Bearer ${token}`;
       }
 
-      const res = await fetch(url.toString(), { headers });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(url.toString(), {
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         const json = await res.json();
         const orders = (json.data as Order[]) || [];
@@ -217,11 +225,18 @@ export const ordersApi = {
         const filterCount = Number(json.meta?.filter_count || 0);
         return { orders, totalCount, filterCount };
       }
-    } catch (err) {
+      throw new Error(`Directus API HTTP ${res.status}`);
+    } catch (err: any) {
       console.warn('Directus orders fetch error:', err);
+      throw new Error(
+        err?.message?.includes('Network') ||
+        err?.message?.includes('network') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.name === 'AbortError'
+          ? 'No internet connection'
+          : err?.message || 'Failed to sync orders'
+      );
     }
-
-    return { orders: [], totalCount: 0, filterCount: 0 };
   },
 
   /**
@@ -307,22 +322,27 @@ export const ordersApi = {
   },
 
   /**
-   * Read settings singleton collection from Directus (delivery_charge and last_revalidate_time).
+   * Read settings singleton collection from Directus (delivery_charge, per_kg_charge, and last_revalidate_time).
    */
-  async getSettings(): Promise<{ delivery_charge: number; last_revalidate_time?: string } | null> {
+  async getSettings(): Promise<{
+    delivery_charge: number;
+    per_kg_charge?: number;
+    last_revalidate_time?: string;
+  } | null> {
     try {
       const token = await directus.getToken();
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch(
-        `${APP_CONFIG.apiBaseUrl}/items/settings?fields=id,delivery_charge,last_revalidate_time`,
+        `${APP_CONFIG.apiBaseUrl}/items/settings?fields=id,delivery_charge,per_kg_charge,last_revalidate_time`,
         { headers }
       );
       if (res.ok) {
         const json = await res.json();
         return {
           delivery_charge: Number(json.data?.delivery_charge ?? 120),
+          per_kg_charge: Number(json.data?.per_kg_charge ?? 0),
           last_revalidate_time: json.data?.last_revalidate_time
             ? String(json.data.last_revalidate_time)
             : undefined,
@@ -357,6 +377,33 @@ export const ordersApi = {
       return res.ok;
     } catch (err) {
       console.error('Failed to update delivery charge in settings:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Update the per_kg_charge in Directus settings singleton collection.
+   */
+  async updatePerKgCharge(amount: number): Promise<boolean> {
+    try {
+      const token = await directus.getToken();
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(`${APP_CONFIG.apiBaseUrl}/items/settings`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          per_kg_charge: Math.round(Number(amount) * 100) / 100,
+        }),
+      });
+
+      return res.ok;
+    } catch (err) {
+      console.error('Failed to update per_kg_charge in settings:', err);
       return false;
     }
   },
