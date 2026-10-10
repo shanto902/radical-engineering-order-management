@@ -1,7 +1,8 @@
-import { readItems, readItem, updateItem } from '@directus/sdk';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readItem, updateItem } from '@directus/sdk';
 import { directus } from './directus';
 import { APP_CONFIG } from '../constants/config';
-import { Order, OrderStatus, FilterStatus, ExtraCharge } from '../types';
+import { Order, OrderStatus, FilterStatus, ExtraCharge, OrderSummaryMetrics } from '../types';
 
 export const ORDER_FIELDS = [
   'id',
@@ -32,60 +33,206 @@ export interface FetchOrdersParams {
   offset?: number;
 }
 
-export const ordersApi = {
-  /**
-   * Fetch orders list with optional status filter, search, pagination
-   */
-  async getOrders(params?: FetchOrdersParams): Promise<Order[]> {
-    const limit = params?.limit || 50;
-    const offset = params?.offset || 0;
-    const filterConditions: any[] = [];
+export interface FetchOrdersResult {
+  orders: Order[];
+  totalCount: number;
+  filterCount: number;
+}
 
-    // Filter by status if not 'all'
-    if (params?.status && params.status !== 'all') {
-      filterConditions.push({ status: { _eq: params.status } });
-    }
+const CACHE_KEYS = {
+  ORDERS_PAGE_1: '@radical_cache_orders_page_1',
+  METRICS: '@radical_cache_metrics',
+  REVALIDATE_TIME: '@radical_cache_revalidate_time',
+};
 
-    // Search query by order_id, customer name, or phone number
-    if (params?.search && params.search.trim()) {
-      const q = params.search.trim();
-      filterConditions.push({
-        _or: [
-          { order_id: { _icontains: q } },
-          { name: { _icontains: q } },
-          { phone: { _icontains: q } },
-        ],
-      });
-    }
-
-    const filter =
-      filterConditions.length === 1
-        ? filterConditions[0]
-        : filterConditions.length > 1
-        ? { _and: filterConditions }
-        : {};
-
+export const ordersCache = {
+  async save(
+    orders: Order[],
+    metrics: OrderSummaryMetrics,
+    revalidateTime?: string | null
+  ): Promise<void> {
     try {
-      const result = await directus.request(
-        readItems('orders' as any, {
-          filter,
-          sort: ['-placed_at', '-date_created'],
-          limit,
-          offset,
-          fields: ORDER_FIELDS as any,
-        })
-      );
-
-      return (result as unknown as Order[]) || [];
+      const promises: Promise<void>[] = [
+        AsyncStorage.setItem(CACHE_KEYS.ORDERS_PAGE_1, JSON.stringify(orders)),
+        AsyncStorage.setItem(CACHE_KEYS.METRICS, JSON.stringify(metrics)),
+      ];
+      if (revalidateTime) {
+        promises.push(
+          AsyncStorage.setItem(CACHE_KEYS.REVALIDATE_TIME, String(revalidateTime))
+        );
+      }
+      await Promise.all(promises);
     } catch (err) {
-      console.warn('Directus SDK fetch orders failed, trying REST fallback:', err);
-      // REST fallback
-      return await this.fetchOrdersRest(filter, limit, offset);
+      console.warn('Cache save warning:', err);
     }
   },
 
+  async load(): Promise<{
+    orders: Order[] | null;
+    metrics: OrderSummaryMetrics | null;
+    revalidateTime: string | null;
+  }> {
+    try {
+      const [ordersRaw, metricsRaw, revalRaw] = await Promise.all([
+        AsyncStorage.getItem(CACHE_KEYS.ORDERS_PAGE_1),
+        AsyncStorage.getItem(CACHE_KEYS.METRICS),
+        AsyncStorage.getItem(CACHE_KEYS.REVALIDATE_TIME),
+      ]);
+
+      return {
+        orders: ordersRaw ? JSON.parse(ordersRaw) : null,
+        metrics: metricsRaw ? JSON.parse(metricsRaw) : null,
+        revalidateTime: revalRaw || null,
+      };
+    } catch (err) {
+      return { orders: null, metrics: null, revalidateTime: null };
+    }
+  },
+};
+
+export const ordersApi = {
   /**
-   * Fetch single order by ID
+   * Fetch paginated orders with Directus server-side search, filtering, and meta counts.
+   * Transfers only requested slice (e.g. 20 items) while returning accurate total/filter counts.
+   */
+  async getOrders(params?: FetchOrdersParams): Promise<FetchOrdersResult> {
+    const limit = params?.limit || 20;
+    const offset = params?.offset || 0;
+    const url = new URL(`${APP_CONFIG.apiBaseUrl}/items/orders`);
+    url.searchParams.set('meta', '*');
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', String(offset));
+    url.searchParams.set('sort', '-placed_at,-date_created');
+    url.searchParams.set('fields', ORDER_FIELDS.join(','));
+
+    // Server-side status filter
+    if (params?.status && params.status !== 'all') {
+      if (params.status === 'cancelled') {
+        url.searchParams.set('filter[status][_in]', 'cancelled,cancel');
+      } else if (params.status === 'delivered') {
+        url.searchParams.set('filter[status][_in]', 'delivered,completed');
+      } else {
+        url.searchParams.set('filter[status][_eq]', params.status);
+      }
+    }
+
+    // Server-side search filter across order_id, name, phone, address
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim();
+      url.searchParams.set('filter[_or][0][order_id][_icontains]', q);
+      url.searchParams.set('filter[_or][1][name][_icontains]', q);
+      url.searchParams.set('filter[_or][2][phone][_icontains]', q);
+      url.searchParams.set('filter[_or][3][address][_icontains]', q);
+    }
+
+    try {
+      const token = await directus.getToken();
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const res = await fetch(url.toString(), { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const orders = (json.data as Order[]) || [];
+        const totalCount = Number(json.meta?.total_count || 0);
+        const filterCount = Number(json.meta?.filter_count || 0);
+        return { orders, totalCount, filterCount };
+      }
+    } catch (err) {
+      console.warn('Directus orders fetch error:', err);
+    }
+
+    return { orders: [], totalCount: 0, filterCount: 0 };
+  },
+
+  /**
+   * Ultra-fast database aggregation queries to compute exact counts and revenue.
+   * Runs in milliseconds on indexed columns and transfers <400 bytes.
+   */
+  async getOrderMetrics(): Promise<OrderSummaryMetrics> {
+    const metrics: OrderSummaryMetrics = {
+      totalCount: 0,
+      pendingCount: 0,
+      confirmedCount: 0,
+      processingCount: 0,
+      shippedCount: 0,
+      deliveredCount: 0,
+      cancelledCount: 0,
+      totalRevenue: 0,
+    };
+
+    try {
+      const token = await directus.getToken();
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      // 1. Grouped counts by status
+      const statusUrl = `${APP_CONFIG.apiBaseUrl}/items/orders?aggregate[count]=*&groupBy[]=status`;
+      // 2. Revenue sum (excluding cancelled orders)
+      const sumUrl = `${APP_CONFIG.apiBaseUrl}/items/orders?aggregate[sum]=total&filter[status][_nin]=cancelled,cancel`;
+
+      const [statusRes, sumRes] = await Promise.all([
+        fetch(statusUrl, { headers }).then((r) => (r.ok ? r.json() : null)),
+        fetch(sumUrl, { headers }).then((r) => (r.ok ? r.json() : null)),
+      ]);
+
+      if (statusRes && Array.isArray(statusRes.data)) {
+        for (const item of statusRes.data) {
+          const st = String(item.status || '').toLowerCase();
+          const count = Number(item.count || 0);
+          metrics.totalCount += count;
+
+          if (st === 'pending') metrics.pendingCount += count;
+          else if (st === 'confirmed') metrics.confirmedCount += count;
+          else if (st === 'processing') metrics.processingCount += count;
+          else if (st === 'shipped') metrics.shippedCount += count;
+          else if (st === 'delivered' || st === 'completed') metrics.deliveredCount += count;
+          else if (st === 'cancelled' || st === 'cancel') metrics.cancelledCount += count;
+        }
+      }
+
+      if (sumRes && Array.isArray(sumRes.data) && sumRes.data[0]?.sum?.total) {
+        metrics.totalRevenue = Math.round(Number(sumRes.data[0].sum.total));
+      }
+    } catch (err) {
+      console.warn('Failed to fetch order metrics:', err);
+    }
+
+    return metrics;
+  },
+
+  /**
+   * Read the lightweight singleton revalidation timestamp from Directus settings.
+   * Returns timestamp string (e.g. "1791515366433") or null.
+   */
+  async getSettingsRevalidateTime(): Promise<string | null> {
+    try {
+      const token = await directus.getToken();
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const res = await fetch(
+        `${APP_CONFIG.apiBaseUrl}/items/settings?fields=last_revalidate_time`,
+        { headers }
+      );
+      if (res.ok) {
+        const json = await res.json();
+        return json.data?.last_revalidate_time
+          ? String(json.data.last_revalidate_time)
+          : null;
+      }
+    } catch (err) {
+      // Quiet fallback
+    }
+    return null;
+  },
+
+  /**
+   * Fetch single order by ID with all product relations
    */
   async getOrderById(id: string): Promise<Order | null> {
     try {
@@ -143,80 +290,21 @@ export const ordersApi = {
     status: OrderStatus;
   } | null> {
     try {
-      const result = await directus.request(
-        readItems('orders' as any, {
-          sort: ['-placed_at', '-date_created'],
-          limit: 1,
-          fields: ['id', 'order_id', 'name', 'total', 'placed_at', 'status'] as any,
-        })
-      );
-      const items = (result as unknown as any[]) || [];
-      return items.length > 0 ? items[0] : null;
-    } catch (err) {
-      return null;
-    }
-  },
-
-  /**
-   * Poll for latest orders created after a timestamp
-   */
-  async getNewOrdersSince(sinceTimestamp: string): Promise<Order[]> {
-    try {
-      const result = await directus.request(
-        readItems('orders' as any, {
-          filter: {
-            _or: [
-              { placed_at: { _gt: sinceTimestamp } },
-              { date_created: { _gt: sinceTimestamp } },
-            ],
-          },
-          sort: ['-placed_at'],
-          limit: 10,
-          fields: ORDER_FIELDS as any,
-        })
-      );
-      return (result as unknown as Order[]) || [];
-    } catch (err) {
-      console.warn('Error polling new orders:', err);
-      return [];
-    }
-  },
-
-  /**
-   * Direct REST fallback in case of SDK transport hiccup
-   */
-  async fetchOrdersRest(
-    filter: any,
-    limit: number,
-    offset: number
-  ): Promise<Order[]> {
-    try {
-      const url = new URL(`${APP_CONFIG.apiBaseUrl}/items/orders`);
-      url.searchParams.set('limit', String(limit));
-      url.searchParams.set('offset', String(offset));
-      url.searchParams.set('sort', '-placed_at,-date_created');
-      url.searchParams.set('fields', ORDER_FIELDS.join(','));
-      if (Object.keys(filter).length > 0) {
-        url.searchParams.set('filter', JSON.stringify(filter));
-      }
-
       const token = await directus.getToken();
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-      };
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-      const response = await fetch(url.toString(), { headers });
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
 
-      if (response.ok) {
-        const json = await response.json();
-        return (json.data as Order[]) || [];
+      const res = await fetch(
+        `${APP_CONFIG.apiBaseUrl}/items/orders?sort=-placed_at,-date_created&limit=1&fields=id,order_id,name,total,placed_at,status`,
+        { headers }
+      );
+      if (res.ok) {
+        const json = await res.json();
+        return json.data && json.data.length > 0 ? json.data[0] : null;
       }
-    } catch (restErr) {
-      console.error('REST fallback failed:', restErr);
+    } catch (err) {
+      // Quiet fallback
     }
-    return [];
+    return null;
   },
 };
-

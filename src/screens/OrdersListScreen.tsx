@@ -37,11 +37,15 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
   navigation,
 }) => {
   const {
-    filteredOrders,
+    orders,
     loading,
     refreshing,
+    loadingMore,
+    hasMore,
+    totalFilteredCount,
     error,
     refreshOrders,
+    loadMoreOrders,
     statusFilter,
     setStatusFilter,
     searchQuery,
@@ -281,9 +285,11 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
         </View>
       ) : (
         <FlatList
-          data={filteredOrders}
+          data={orders}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          onEndReached={loadMoreOrders}
+          onEndReachedThreshold={0.4}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -291,6 +297,20 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
               tintColor={COLORS.primary}
               colors={[COLORS.primary]}
             />
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={styles.footerLoaderText}>Loading more orders...</Text>
+              </View>
+            ) : orders.length > 0 && !hasMore ? (
+              <View style={styles.footerEnd}>
+                <Text style={styles.footerEndText}>
+                  Showing all {totalFilteredCount} {statusFilter === 'all' ? '' : statusFilter} orders
+                </Text>
+              </View>
+            ) : null
           }
           renderItem={({ item }) => (
             <OrderCard
@@ -574,6 +594,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
+  },
+  footerLoader: {
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  footerLoaderText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  footerEnd: {
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerEndText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontStyle: 'italic',
   },
 });
 

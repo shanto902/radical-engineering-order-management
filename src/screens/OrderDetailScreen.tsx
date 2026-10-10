@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,11 +16,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
+import { ordersApi } from '../services/ordersApi';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatusChangeModal } from '../components/StatusChangeModal';
 import { ExtraChargesModal } from '../components/ExtraChargesModal';
 import { invoiceService } from '../services/invoiceService';
-import { OrderStatus, ExtraCharge } from '../types';
+import { OrderStatus, ExtraCharge, Order } from '../types';
 import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING, STATUS_MAP } from '../constants/theme';
 
@@ -31,6 +32,8 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   const { orderId } = route.params;
   const { orders, updateStatus, updateExtraCharges } = useOrders();
 
+  const [fetchedOrder, setFetchedOrder] = useState<Order | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [extraChargesModalVisible, setExtraChargesModalVisible] =
     useState(false);
@@ -38,7 +41,30 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   const [isPrinting, setIsPrinting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const order = orders.find((o) => o.id === orderId);
+  const order = orders.find((o) => o.id === orderId) || fetchedOrder;
+
+  useEffect(() => {
+    if (!orders.find((o) => o.id === orderId) && orderId) {
+      setLoadingDetail(true);
+      ordersApi
+        .getOrderById(orderId)
+        .then((res) => {
+          if (res) setFetchedOrder(res);
+        })
+        .finally(() => setLoadingDetail(false));
+    }
+  }, [orderId, orders]);
+
+  if (loadingDetail && !order) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={[styles.notFoundText, { marginTop: 12 }]}>Loading order details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!order) {
     return (

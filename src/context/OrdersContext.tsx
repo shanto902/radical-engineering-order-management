@@ -14,17 +14,33 @@ import {
   OrderSummaryMetrics,
   ExtraCharge,
 } from '../types';
-import { ordersApi } from '../services/ordersApi';
+import { ordersApi, ordersCache } from '../services/ordersApi';
 import { directus } from '../services/directus';
 import { notificationsService } from '../services/notifications';
 import { useAuth } from './AuthContext';
 import { APP_CONFIG } from '../constants/config';
 
+const PAGE_SIZE = 20;
+
+const DEFAULT_METRICS: OrderSummaryMetrics = {
+  totalCount: 0,
+  pendingCount: 0,
+  confirmedCount: 0,
+  processingCount: 0,
+  shippedCount: 0,
+  deliveredCount: 0,
+  cancelledCount: 0,
+  totalRevenue: 0,
+};
+
 interface OrdersContextType {
   orders: Order[];
-  filteredOrders: Order[];
+  filteredOrders: Order[]; // Maintained for backwards compatibility
   loading: boolean;
   refreshing: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  totalFilteredCount: number;
   error: string | null;
   statusFilter: FilterStatus;
   setStatusFilter: (status: FilterStatus) => void;
@@ -32,6 +48,7 @@ interface OrdersContextType {
   setSearchQuery: (query: string) => void;
   lastSynced: Date | null;
   refreshOrders: () => Promise<void>;
+  loadMoreOrders: () => Promise<void>;
   updateStatus: (orderId: string, status: OrderStatus) => Promise<boolean>;
   updateExtraCharges: (
     orderId: string,
@@ -59,141 +76,279 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+
+  const [metrics, setMetrics] = useState<OrderSummaryMetrics>(DEFAULT_METRICS);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [unreadNewOrders, setUnreadNewOrders] = useState<number>(0);
   const [isPollingEnabled, setIsPollingEnabled] = useState<boolean>(true);
-  const [isRealtimeConnected, setIsRealtimeConnected] =
-    useState<boolean>(false);
-  const [activeNewOrderAlert, setActiveNewOrderAlert] =
-    useState<Order | null>(null);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
+  const [activeNewOrderAlert, setActiveNewOrderAlert] = useState<Order | null>(null);
 
-  // Track known order IDs to detect newly arrived orders
-  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  // References to eliminate unnecessary DB queries during polling
   const lastKnownLatestIdRef = useRef<string | null>(null);
-  const isFirstLoadRef = useRef<boolean>(true);
+  const lastRevalidateTimeRef = useRef<string | null>(null);
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const isInitialLoadDoneRef = useRef<boolean>(false);
 
-  // Initialize notification sound / haptics once on mount
+  // Initialize notification sound / haptics on mount
   useEffect(() => {
     notificationsService.init();
   }, []);
 
-  const loadOrders = useCallback(async (isPullRefresh = false) => {
-    if (!isAuthenticated) {
-      setLoading(false);
-      return;
-    }
+  // Debounce search input by 350ms to minimize network traffic
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 350);
 
-    if (isPullRefresh) {
-      setRefreshing(true);
-    } else if (isFirstLoadRef.current) {
-      setLoading(true);
-    }
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-    setError(null);
-    try {
-      const fetched = await ordersApi.getOrders({ limit: 100 });
+  // Load cached orders & metrics instantly on app launch
+  useEffect(() => {
+    if (!isAuthenticated) return;
 
-      // Detect any new orders that arrived after first load
-      if (!isFirstLoadRef.current && fetched.length > 0) {
-        const newlyArrived = fetched.filter(
-          (o) => !knownOrderIdsRef.current.has(o.id)
-        );
-
-        if (newlyArrived.length > 0) {
-          // Notify user about the newest order with sound + haptics
-          notificationsService.notifyNewOrder(newlyArrived[0]);
-          setUnreadNewOrders((prev) => prev + newlyArrived.length);
-          setActiveNewOrderAlert(newlyArrived[0]);
-        }
+    ordersCache.load().then((cached) => {
+      if (cached.orders && cached.orders.length > 0) {
+        setOrders(cached.orders);
+        setTotalFilteredCount(cached.orders.length);
+        if (cached.metrics) setMetrics(cached.metrics);
+        if (cached.revalidateTime) lastRevalidateTimeRef.current = cached.revalidateTime;
+        setLoading(false);
       }
-
-      // Update known set and latest id
-      const currentIds = new Set(fetched.map((o) => o.id));
-      knownOrderIdsRef.current = currentIds;
-      if (fetched.length > 0) {
-        lastKnownLatestIdRef.current = fetched[0].id;
-      }
-
-      setOrders(fetched);
-      setLastSynced(new Date());
-      isFirstLoadRef.current = false;
-    } catch (err: any) {
-      console.warn('Orders load failed:', err);
-      setError(err?.message || 'Failed to sync orders');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    });
   }, [isAuthenticated]);
 
-  // Initial load when authenticated
+  /**
+   * Fetch fresh order metrics from Directus via fast database aggregation
+   */
+  const fetchMetrics = useCallback(async () => {
+    try {
+      const freshMetrics = await ordersApi.getOrderMetrics();
+      setMetrics(freshMetrics);
+      return freshMetrics;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /**
+   * Load Page 1 of orders with active server-side search and filters
+   */
+  const loadFirstPage = useCallback(
+    async (isPullRefresh = false) => {
+      if (!isAuthenticated) {
+        setLoading(false);
+        return;
+      }
+
+      if (isPullRefresh) {
+        setRefreshing(true);
+      } else if (!isInitialLoadDoneRef.current && orders.length === 0) {
+        setLoading(true);
+      }
+
+      setError(null);
+
+      try {
+        const [ordersRes, freshMetrics, revalTime] = await Promise.all([
+          ordersApi.getOrders({
+            status: statusFilter,
+            search: debouncedSearch,
+            limit: PAGE_SIZE,
+            offset: 0,
+          }),
+          fetchMetrics(),
+          ordersApi.getSettingsRevalidateTime(),
+        ]);
+
+        const fetchedOrders = ordersRes.orders;
+        const filterCount = ordersRes.filterCount;
+
+        // Detect newly arrived orders for foreground chime & top banner
+        if (isInitialLoadDoneRef.current && fetchedOrders.length > 0) {
+          const newlyArrived = fetchedOrders.filter(
+            (o) => !knownOrderIdsRef.current.has(o.id)
+          );
+
+          if (newlyArrived.length > 0) {
+            notificationsService.notifyNewOrder(newlyArrived[0]);
+            setUnreadNewOrders((prev) => prev + newlyArrived.length);
+            setActiveNewOrderAlert(newlyArrived[0]);
+          }
+        }
+
+        // Update known IDs tracking
+        knownOrderIdsRef.current = new Set(fetchedOrders.map((o) => o.id));
+        if (fetchedOrders.length > 0) {
+          lastKnownLatestIdRef.current = fetchedOrders[0].id;
+        }
+        if (revalTime) {
+          lastRevalidateTimeRef.current = revalTime;
+        }
+
+        setOrders(fetchedOrders);
+        setTotalFilteredCount(filterCount);
+        setHasMore(fetchedOrders.length < filterCount);
+        setLastSynced(new Date());
+
+        // Cache first page for instant display on next app open
+        if (statusFilter === 'all' && !debouncedSearch && fetchedOrders.length > 0) {
+          ordersCache.save(
+            fetchedOrders,
+            freshMetrics || metrics,
+            revalTime || lastRevalidateTimeRef.current
+          );
+        }
+
+        isInitialLoadDoneRef.current = true;
+      } catch (err: any) {
+        console.warn('Orders load failed:', err);
+        setError(err?.message || 'Failed to sync orders');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [isAuthenticated, statusFilter, debouncedSearch, fetchMetrics, orders.length, metrics]
+  );
+
+  // Trigger load whenever authentication, status filter, or debounced search changes
   useEffect(() => {
     if (isAuthenticated) {
-      loadOrders();
+      loadFirstPage();
     } else {
       setOrders([]);
       setLoading(false);
     }
-  }, [isAuthenticated, loadOrders]);
+  }, [isAuthenticated, statusFilter, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ultra-lightweight ping poller (only queries 1 row, 5 scalar fields, 0 DB joins)
-  // Pauses automatically when app is minimized to eliminate server pressure and battery drain
+  /**
+   * Infinite scroll: load next page when user scrolls to bottom
+   */
+  const loadMoreOrders = async () => {
+    if (loading || loadingMore || !hasMore || orders.length >= totalFilteredCount) {
+      return;
+    }
+
+    setLoadingMore(true);
+    try {
+      const res = await ordersApi.getOrders({
+        status: statusFilter,
+        search: debouncedSearch,
+        limit: PAGE_SIZE,
+        offset: orders.length,
+      });
+
+      if (res.orders.length > 0) {
+        setOrders((prev) => {
+          const existingIds = new Set(prev.map((o) => o.id));
+          const uniqueNew = res.orders.filter((o) => !existingIds.has(o.id));
+          return [...prev, ...uniqueNew];
+        });
+
+        // Add to known IDs
+        res.orders.forEach((o) => knownOrderIdsRef.current.add(o.id));
+      }
+
+      setTotalFilteredCount(res.filterCount);
+      setHasMore(orders.length + res.orders.length < res.filterCount);
+    } catch (err) {
+      console.warn('Failed to load more orders:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  /**
+   * Ultra-Lightweight Smart Polling (runs every 25s only while app is in foreground).
+   * Instead of pulling heavy order lists, it checks:
+   * 1. Settings singleton last_revalidate_time
+   * 2. 1-row metadata of the newest order
+   * If neither changed, it executes 0 database joins and transfers zero data!
+   */
   useEffect(() => {
     if (!isPollingEnabled || !isAuthenticated) return;
 
     let appState = AppState.currentState;
 
-    const checkForNewOrdersPing = async () => {
-      // Never query if the app is in background or phone is asleep
+    const checkRevalidationPing = async () => {
       if (AppState.currentState !== 'active') return;
 
       try {
-        const latest = await ordersApi.getLatestOrderMeta();
-        if (!latest) return;
+        const [latestMeta, serverRevalTime] = await Promise.all([
+          ordersApi.getLatestOrderMeta(),
+          ordersApi.getSettingsRevalidateTime(),
+        ]);
 
-        // If the newest order ID is different from our last known ID
+        let needsRefresh = false;
+
+        // Check if server revalidate time changed
         if (
-          lastKnownLatestIdRef.current &&
-          latest.id !== lastKnownLatestIdRef.current
+          serverRevalTime &&
+          lastRevalidateTimeRef.current &&
+          serverRevalTime !== lastRevalidateTimeRef.current
         ) {
-          lastKnownLatestIdRef.current = latest.id;
-          // Trigger audio chime + vibration + top banner immediately
-          notificationsService.notifyNewOrder(latest as any);
-          setActiveNewOrderAlert(latest as any);
-          setUnreadNewOrders((prev) => prev + 1);
-          // Refresh the full feed
-          loadOrders();
-        } else if (!lastKnownLatestIdRef.current) {
-          lastKnownLatestIdRef.current = latest.id;
+          lastRevalidateTimeRef.current = serverRevalTime;
+          needsRefresh = true;
+        } else if (serverRevalTime && !lastRevalidateTimeRef.current) {
+          lastRevalidateTimeRef.current = serverRevalTime;
         }
-      } catch (err) {
-        // Silent fail on network transient
+
+        // Check if newest order ID changed
+        if (latestMeta) {
+          if (
+            lastKnownLatestIdRef.current &&
+            latestMeta.id !== lastKnownLatestIdRef.current
+          ) {
+            lastKnownLatestIdRef.current = latestMeta.id;
+            // Play alert immediately!
+            notificationsService.notifyNewOrder(latestMeta as any);
+            setActiveNewOrderAlert(latestMeta as any);
+            setUnreadNewOrders((prev) => prev + 1);
+            needsRefresh = true;
+          } else if (!lastKnownLatestIdRef.current) {
+            lastKnownLatestIdRef.current = latestMeta.id;
+          }
+        }
+
+        // If something changed on server, re-sync current view and metrics
+        if (needsRefresh) {
+          loadFirstPage();
+        }
+      } catch {
+        // Silent on transient network blip
       }
     };
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      // When resuming from background back into foreground, immediately check
       if (appState.match(/inactive|background/) && nextAppState === 'active') {
-        checkForNewOrdersPing();
+        checkRevalidationPing();
       }
       appState = nextAppState;
     });
 
     const interval = setInterval(() => {
-      checkForNewOrdersPing();
+      checkRevalidationPing();
     }, APP_CONFIG.orderPollIntervalMs);
 
     return () => {
       clearInterval(interval);
       subscription.remove();
     };
-  }, [isPollingEnabled, isAuthenticated, loadOrders]);
+  }, [isPollingEnabled, isAuthenticated, loadFirstPage]);
 
-  // Directus WebSocket Realtime listener (if WEBSOCKETS_ENABLED is set on Directus Docker)
-  // Seamlessly receives instant pushes from Directus with zero polling delay.
+  /**
+   * Directus WebSocket Realtime listener (Zero-latency instant push)
+   */
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -219,9 +374,9 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
             notificationsService.notifyNewOrder(newOrder as any);
             setActiveNewOrderAlert(newOrder as any);
             setUnreadNewOrders((prev) => prev + 1);
-            loadOrders();
-          } else if (ev.event === 'update' && ev.data && ev.data.length > 0) {
-            loadOrders();
+            loadFirstPage();
+          } else if (ev.event === 'update') {
+            loadFirstPage();
           }
         }
       } catch (err) {
@@ -240,28 +395,56 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         } catch {}
       }
     };
-  }, [isAuthenticated, loadOrders]);
+  }, [isAuthenticated, loadFirstPage]);
 
+  /**
+   * Update status with instant optimistic UI update + server sync
+   */
   const updateStatus = async (
     orderId: string,
     newStatus: OrderStatus
   ): Promise<boolean> => {
     try {
-      // Optimistic update
+      const prevOrder = orders.find((o) => o.id === orderId);
+      const oldStatus = prevOrder?.status;
+
+      // Optimistic update in list
       setOrders((prev) =>
-        prev.map((ord) => (ord.id === orderId ? { ...ord, status: newStatus } : ord))
+        prev.map((ord) =>
+          ord.id === orderId ? { ...ord, status: newStatus } : ord
+        )
       );
 
+      // Optimistic update in metrics
+      if (oldStatus && oldStatus !== newStatus) {
+        setMetrics((prev) => {
+          const updated = { ...prev };
+          const decKey = `${oldStatus}Count` as keyof OrderSummaryMetrics;
+          const incKey = `${newStatus}Count` as keyof OrderSummaryMetrics;
+          if (typeof updated[decKey] === 'number') {
+            (updated[decKey] as number) = Math.max(0, (updated[decKey] as number) - 1);
+          }
+          if (typeof updated[incKey] === 'number') {
+            (updated[incKey] as number) = (updated[incKey] as number) + 1;
+          }
+          return updated;
+        });
+      }
+
       await ordersApi.updateStatus(orderId, newStatus);
+      // Re-fetch metrics in background for exact consistency
+      fetchMetrics();
       return true;
     } catch (err) {
       console.error('Failed to update status:', err);
-      // Revert / re-sync on failure
-      loadOrders();
+      loadFirstPage();
       return false;
     }
   };
 
+  /**
+   * Update extra charges with optimistic UI update + server sync
+   */
   const updateExtraCharges = async (
     orderId: string,
     charges: ExtraCharge[],
@@ -277,10 +460,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       );
 
       await ordersApi.updateExtraCharges(orderId, charges, newTotal);
+      fetchMetrics();
       return true;
     } catch (err) {
       console.error('Failed to update extra charges:', err);
-      loadOrders();
+      loadFirstPage();
       return false;
     }
   };
@@ -293,69 +477,24 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsPollingEnabled((prev) => !prev);
   };
 
-  // Filtered orders computation
-  const filteredOrders = orders.filter((order) => {
-    const matchesStatus =
-      statusFilter === 'all' || order.status === statusFilter;
-
-    if (!matchesStatus) return false;
-
-    if (!searchQuery.trim()) return true;
-
-    const q = searchQuery.toLowerCase().trim();
-    const matchesId = (order.order_id || order.id || '')
-      .toLowerCase()
-      .includes(q);
-    const matchesName = (order.name || '').toLowerCase().includes(q);
-    const matchesPhone = (order.phone || '').includes(q);
-    const matchesAddress = (order.address || '').toLowerCase().includes(q);
-
-    return matchesId || matchesName || matchesPhone || matchesAddress;
-  });
-
-  // Calculate order metrics
-  const metrics: OrderSummaryMetrics = orders.reduce(
-    (acc, curr) => {
-      acc.totalCount += 1;
-      const status = (curr.status || 'pending').toLowerCase();
-      if (status === 'pending') acc.pendingCount += 1;
-      else if (status === 'confirmed') acc.confirmedCount += 1;
-      else if (status === 'processing') acc.processingCount += 1;
-      else if (status === 'shipped') acc.shippedCount += 1;
-      else if (status === 'delivered') acc.deliveredCount += 1;
-      else if (status === 'cancelled') acc.cancelledCount += 1;
-
-      if (status !== 'cancelled') {
-        acc.totalRevenue += Number(curr.total || 0);
-      }
-      return acc;
-    },
-    {
-      totalCount: 0,
-      pendingCount: 0,
-      confirmedCount: 0,
-      processingCount: 0,
-      shippedCount: 0,
-      deliveredCount: 0,
-      cancelledCount: 0,
-      totalRevenue: 0,
-    }
-  );
-
   return (
     <OrdersContext.Provider
       value={{
         orders,
-        filteredOrders,
+        filteredOrders: orders, // Alias for backwards compatibility
         loading,
         refreshing,
+        loadingMore,
+        hasMore,
+        totalFilteredCount,
         error,
         statusFilter,
         setStatusFilter,
         searchQuery,
         setSearchQuery,
         lastSynced,
-        refreshOrders: () => loadOrders(true),
+        refreshOrders: () => loadFirstPage(true),
+        loadMoreOrders,
         updateStatus,
         updateExtraCharges,
         metrics,
@@ -385,4 +524,3 @@ export const useOrders = (): OrdersContextType => {
   }
   return context;
 };
-
