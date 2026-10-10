@@ -173,24 +173,19 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         const fetchedOrders = ordersRes.orders;
         const filterCount = ordersRes.filterCount;
 
-        // Detect newly arrived orders for foreground chime & top banner
-        if (isInitialLoadDoneRef.current && fetchedOrders.length > 0) {
-          const newlyArrived = fetchedOrders.filter(
-            (o) => !knownOrderIdsRef.current.has(o.id)
-          );
+        // Track known IDs without discarding previously loaded IDs
+        fetchedOrders.forEach((o) => knownOrderIdsRef.current.add(o.id));
 
-          if (newlyArrived.length > 0) {
-            notificationsService.notifyNewOrder(newlyArrived[0]);
-            setUnreadNewOrders((prev) => prev + newlyArrived.length);
-            setActiveNewOrderAlert(newlyArrived[0]);
-          }
-        }
-
-        // Update known IDs tracking
-        knownOrderIdsRef.current = new Set(fetchedOrders.map((o) => o.id));
-        if (fetchedOrders.length > 0) {
+        // Track global newest ID only from the unfiltered view
+        if (
+          !lastKnownLatestIdRef.current &&
+          fetchedOrders.length > 0 &&
+          statusFilter === 'all' &&
+          !debouncedSearch
+        ) {
           lastKnownLatestIdRef.current = fetchedOrders[0].id;
         }
+
         if (revalTime) {
           lastRevalidateTimeRef.current = revalTime;
         }
@@ -303,20 +298,23 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
           lastRevalidateTimeRef.current = serverRevalTime;
         }
 
-        // Check if newest order ID changed
+        // Check if newest order ID changed and is not already known
         if (latestMeta) {
           if (
             lastKnownLatestIdRef.current &&
-            latestMeta.id !== lastKnownLatestIdRef.current
+            latestMeta.id !== lastKnownLatestIdRef.current &&
+            !knownOrderIdsRef.current.has(latestMeta.id)
           ) {
             lastKnownLatestIdRef.current = latestMeta.id;
+            knownOrderIdsRef.current.add(latestMeta.id);
             // Play alert immediately!
             notificationsService.notifyNewOrder(latestMeta as any);
             setActiveNewOrderAlert(latestMeta as any);
             setUnreadNewOrders((prev) => prev + 1);
             needsRefresh = true;
-          } else if (!lastKnownLatestIdRef.current) {
+          } else {
             lastKnownLatestIdRef.current = latestMeta.id;
+            knownOrderIdsRef.current.add(latestMeta.id);
           }
         }
 
@@ -370,11 +368,14 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
           const ev = message as any;
           if (ev.event === 'create' && ev.data && ev.data.length > 0) {
             const newOrder = ev.data[0];
-            lastKnownLatestIdRef.current = newOrder.id;
-            notificationsService.notifyNewOrder(newOrder as any);
-            setActiveNewOrderAlert(newOrder as any);
-            setUnreadNewOrders((prev) => prev + 1);
-            loadFirstPage();
+            if (!knownOrderIdsRef.current.has(newOrder.id)) {
+              knownOrderIdsRef.current.add(newOrder.id);
+              lastKnownLatestIdRef.current = newOrder.id;
+              notificationsService.notifyNewOrder(newOrder as any);
+              setActiveNewOrderAlert(newOrder as any);
+              setUnreadNewOrders((prev) => prev + 1);
+              loadFirstPage();
+            }
           } else if (ev.event === 'update') {
             loadFirstPage();
           }
