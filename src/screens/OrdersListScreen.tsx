@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
+import { useNetwork } from '../context/NetworkContext';
 import { OrderCard } from '../components/OrderCard';
 import { StatusChangeModal } from '../components/StatusChangeModal';
 import { invoiceService } from '../services/invoiceService';
@@ -36,6 +37,7 @@ const STATUS_FILTERS: { key: FilterStatus; label: string; countKey?: string }[] 
 export const OrdersListScreen: React.FC<{ navigation: any }> = ({
   navigation,
 }) => {
+  const { isOnline, checkConnection } = useNetwork();
   const {
     orders,
     loading,
@@ -69,6 +71,13 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleOpenStatusModal = (order: Order) => {
+    if (!isOnline) {
+      Alert.alert(
+        'Offline Mode',
+        'Cannot update order status while offline. Please connect to the internet to save changes.'
+      );
+      return;
+    }
     setSelectedOrderForStatus(order);
   };
 
@@ -142,8 +151,10 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
 
     // 4. Target the active new order or first unread order
     const targetOrder =
-      activeNewOrderAlert ||
-      orders.find((o) => isOrderNew(o.id, o.placed_at, o.status));
+      (activeNewOrderAlert && (!activeNewOrderAlert.status || activeNewOrderAlert.status === 'pending')
+        ? activeNewOrderAlert
+        : null) ||
+      orders.find((o) => o.status === 'pending' && isOrderNew(o.id, o.placed_at, o.status));
 
     if (targetOrder) {
       markOrderAsViewed(targetOrder.id);
@@ -159,17 +170,42 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
       <View style={styles.header}>
         <View>
           <Text style={styles.companyTitle}>RADICAL ORDERS</Text>
-          <View style={styles.syncStatusRow}>
+          <TouchableOpacity
+            style={styles.syncStatusRow}
+            onPress={() => {
+              if (!isOnline) {
+                checkConnection().then((ok) => {
+                  if (ok) refreshOrders();
+                });
+              }
+            }}
+            activeOpacity={!isOnline ? 0.7 : 1}
+          >
             <View
               style={[
                 styles.liveDot,
-                { backgroundColor: isPollingEnabled ? '#16A34A' : '#94A3B8' },
+                {
+                  backgroundColor: !isOnline
+                    ? COLORS.danger
+                    : isPollingEnabled
+                    ? '#16A34A'
+                    : '#94A3B8',
+                },
               ]}
             />
-            <Text style={styles.syncStatusText}>
-              {isPollingEnabled ? 'Live Sync Active' : 'Sync Paused'}
+            <Text
+              style={[
+                styles.syncStatusText,
+                !isOnline && { color: COLORS.danger, fontWeight: '700' },
+              ]}
+            >
+              {!isOnline
+                ? 'Offline (Tap to reconnect)'
+                : isPollingEnabled
+                ? 'Live Sync Active'
+                : 'Sync Paused'}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.headerRight}>
@@ -303,7 +339,7 @@ export const OrdersListScreen: React.FC<{ navigation: any }> = ({
       </View>
 
       {/* Active New Order Alert Banner */}
-      {activeNewOrderAlert && (
+      {activeNewOrderAlert && (!activeNewOrderAlert.status || activeNewOrderAlert.status === 'pending') && (
         <TouchableOpacity
           style={styles.newOrderAlertBanner}
           onPress={() => {

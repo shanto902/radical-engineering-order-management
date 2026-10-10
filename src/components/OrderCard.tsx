@@ -77,8 +77,12 @@ export const OrderCard: React.FC<OrderCardProps> = ({
     await Clipboard.setStringAsync(order.order_id || order.id);
   };
 
+  // Only show the NEW badge & border if the order is actually pending!
+  // If status is changed (by another admin or current staff), it is no longer new.
+  const showNew = Boolean(isNew && order.status === 'pending');
+
   return (
-    <View style={[styles.card, isNew && styles.newOrderCard]}>
+    <View style={[styles.card, showNew && styles.newOrderCard]}>
       {/* Clickable Card Body */}
       <TouchableOpacity
         activeOpacity={0.85}
@@ -101,7 +105,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({
               />
             </TouchableOpacity>
 
-            {isNew && (
+            {showNew && (
               <View style={styles.newBadge}>
                 <Ionicons name="sparkles" size={10} color="#B45309" />
                 <Text style={styles.newBadgeText}>NEW</Text>

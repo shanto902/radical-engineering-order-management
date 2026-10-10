@@ -17,6 +17,7 @@ import { Order, ExtraCharge } from '../types';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 import { normalizeExtraCharges } from '../services/ordersApi';
 import { useOrders } from '../context/OrdersContext';
+import { useNetwork } from '../context/NetworkContext';
 
 interface ExtraChargesModalProps {
   visible: boolean;
@@ -32,6 +33,7 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
   onSave,
 }) => {
   const { defaultDeliveryCharge } = useOrders();
+  const { isOnline } = useNetwork();
   const [chargeName, setChargeName] = useState<string>('');
   const [chargeCost, setChargeCost] = useState<string>('');
   const [chargesList, setChargesList] = useState<ExtraCharge[]>([]);
@@ -122,6 +124,13 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (!isOnline) {
+      Alert.alert(
+        'Offline Mode',
+        'Cannot update extra charges while offline. Please connect to the internet to save changes.'
+      );
+      return;
+    }
     try {
       setSaving(true);
       await onSave(chargesList, calculatedGrandTotal);

@@ -19,6 +19,7 @@ import { ordersApi, ordersCache } from '../services/ordersApi';
 import { directus } from '../services/directus';
 import { notificationsService } from '../services/notifications';
 import { useAuth } from './AuthContext';
+import { useNetwork } from './NetworkContext';
 import { APP_CONFIG } from '../constants/config';
 
 const PAGE_SIZE = 20;
@@ -78,7 +79,8 @@ const OrdersContext = createContext<OrdersContextType | undefined>(undefined);
 export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user: currentUser } = useAuth();
+  const { notifyOnline, notifyOffline, subscribeOnOnline } = useNetwork();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -195,11 +197,15 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const isOrderNew = useCallback(
     (orderId: string, placedAt?: string, status?: OrderStatus) => {
+      // ONLY pending orders can ever be marked as NEW!
+      // If status changed to confirmed, processing, shipped, etc. (e.g. by another admin), it's no longer new.
+      if (status !== 'pending') return false;
+
       if (newOrderIds.has(orderId)) return true;
       if (viewedOrderIds.has(orderId)) return false;
 
       // If status is pending and placed within last 3 hours, mark as new until staff views it
-      if (status === 'pending' && placedAt) {
+      if (placedAt) {
         try {
           const placedTime = new Date(placedAt).getTime();
           const now = Date.now();
@@ -309,16 +315,28 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         isInitialLoadDoneRef.current = true;
+        notifyOnline();
       } catch (err: any) {
         console.warn('Orders load failed:', err);
         setError(err?.message || 'Failed to sync orders');
+        notifyOffline();
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [isAuthenticated, statusFilter, debouncedSearch, fetchMetrics, orders.length, metrics]
+    [isAuthenticated, statusFilter, debouncedSearch, fetchMetrics, orders.length, metrics, notifyOnline, notifyOffline]
   );
+
+  // Auto-refresh orders whenever network connectivity is restored
+  useEffect(() => {
+    const unsub = subscribeOnOnline(() => {
+      if (isAuthenticated) {
+        loadFirstPage();
+      }
+    });
+    return unsub;
+  }, [subscribeOnOnline, isAuthenticated, loadFirstPage]);
 
   // Trigger load whenever authentication, status filter, or debounced search changes
   useEffect(() => {
@@ -483,6 +501,18 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
               loadFirstPage();
             }
           } else if (ev.event === 'update') {
+            if (ev.data && ev.data.length > 0) {
+              const updated = ev.data[0];
+              if (updated?.id && updated?.status && updated.status !== 'pending') {
+                setNewOrderIds((prev) => {
+                  if (!prev.has(updated.id)) return prev;
+                  const next = new Set(prev);
+                  next.delete(updated.id);
+                  return next;
+                });
+                setActiveNewOrderAlert((prev) => (prev?.id === updated.id ? null : prev));
+              }
+            }
             loadFirstPage();
           }
         }
@@ -515,12 +545,39 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
       const prevOrder = orders.find((o) => o.id === orderId);
       const oldStatus = prevOrder?.status;
 
+      const updaterInfo = currentUser
+        ? {
+            id: currentUser.id,
+            first_name: currentUser.first_name,
+            last_name: currentUser.last_name,
+            email: currentUser.email,
+          }
+        : undefined;
+
       // Optimistic update in list
       setOrders((prev) =>
         prev.map((ord) =>
-          ord.id === orderId ? { ...ord, status: newStatus } : ord
+          ord.id === orderId
+            ? {
+                ...ord,
+                status: newStatus,
+                date_updated: new Date().toISOString(),
+                ...(updaterInfo ? { last_updated_by: updaterInfo } : {}),
+              }
+            : ord
         )
       );
+
+      // If order is transitioned out of pending, clear it from new order tracking
+      if (newStatus !== 'pending') {
+        setNewOrderIds((prev) => {
+          if (!prev.has(orderId)) return prev;
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+        });
+        setActiveNewOrderAlert((prev) => (prev?.id === orderId ? null : prev));
+      }
 
       // Optimistic update in metrics
       if (oldStatus && oldStatus !== newStatus) {
@@ -538,7 +595,13 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
 
-      await ordersApi.updateStatus(orderId, newStatus);
+      const updated = await ordersApi.updateStatus(orderId, newStatus, currentUser?.id);
+      if (updated) {
+        setOrders((prev) =>
+          prev.map((ord) => (ord.id === orderId ? { ...ord, ...updated } : ord))
+        );
+      }
+
       // Re-fetch metrics in background for exact consistency
       fetchMetrics();
       return true;

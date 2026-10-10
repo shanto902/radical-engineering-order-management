@@ -50,9 +50,28 @@ export interface Order {
   placed_at: string;
   date_created?: string;
   date_updated?: string | null;
+  last_updated_by?: DirectusUser | any | null;
   extra_charges?: ExtraCharge[] | null;
   order_items?: OrderItem[];
 }
+
+/**
+ * Returns formatted "Firstname Lastname" of the admin/staff who changed the status.
+ * Gracefully handles variations in Directus user fields.
+ */
+export const getOrderUpdaterName = (
+  updater?: DirectusUser | any | null
+): string | null => {
+  if (!updater) return null;
+  if (typeof updater === 'string') return null;
+  const first = (updater.first_name || updater.firstname || updater.firstName || '').trim();
+  const last = (updater.last_name || updater.lastname || updater.lastName || '').trim();
+  const fullName = [first, last].filter(Boolean).join(' ');
+  if (fullName) return fullName;
+  if (updater.name) return String(updater.name).trim();
+  if (updater.email) return String(updater.email).split('@')[0];
+  return null;
+};
 
 export interface StatusConfig {
   key: OrderStatus;

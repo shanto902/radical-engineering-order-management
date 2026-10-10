@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Order, OrderStatus } from '../types';
+import { useNetwork } from '../context/NetworkContext';
+import { Order, OrderStatus, getOrderUpdaterName } from '../types';
 import { STATUS_MAP, COLORS, RADIUS, SPACING } from '../constants/theme';
 
 interface StatusChangeModalProps {
@@ -39,6 +40,7 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
   onSelectStatus,
 }) => {
   const insets = useSafeAreaInsets();
+  const { isOnline } = useNetwork();
   const [updating, setUpdating] = useState<boolean>(false);
   const [selectedKey, setSelectedKey] = useState<OrderStatus | null>(null);
 
@@ -46,8 +48,17 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
 
   const currentStatus = order.status;
   const grandTotal = Number(order.total || 0).toLocaleString();
+  const updaterName = getOrderUpdaterName(order.last_updated_by);
 
   const handleSelect = (status: OrderStatus) => {
+    if (!isOnline) {
+      Alert.alert(
+        'Offline Mode',
+        'Cannot update order status while offline. Please connect to the internet to save changes.'
+      );
+      return;
+    }
+
     if (status === currentStatus) {
       onClose();
       return;
@@ -105,6 +116,14 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
                   <Text style={styles.subtitle} numberOfLines={1}>
                     Order #{order.order_id || order.id} • {order.name || 'Customer'}
                   </Text>
+                  {updaterName && (
+                    <View style={styles.updaterRow}>
+                      <Ionicons name="person-circle" size={13} color={COLORS.primary} />
+                      <Text style={styles.updaterSubtitle} numberOfLines={1}>
+                        Last changed by {updaterName}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <TouchableOpacity
                   onPress={onClose}
@@ -114,6 +133,15 @@ export const StatusChangeModal: React.FC<StatusChangeModalProps> = ({
                   <Ionicons name="close" size={24} color={COLORS.textSecondary} />
                 </TouchableOpacity>
               </View>
+
+              {!isOnline && (
+                <View style={styles.offlineWarningBox}>
+                  <Ionicons name="cloud-offline" size={14} color="#991B1B" />
+                  <Text style={styles.offlineWarningText}>
+                    Offline Mode • Reconnect to save status changes
+                  </Text>
+                </View>
+              )}
 
               {/* Scrollable Status List */}
               <ScrollView
@@ -238,6 +266,17 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 4,
   },
+  updaterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  updaterSubtitle: {
+    fontSize: 11,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
   optionsScrollView: {
     maxHeight: 380,
   },
@@ -290,6 +329,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: COLORS.primary,
+  },
+  offlineWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#F87171',
+    borderRadius: RADIUS.xs,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginHorizontal: SPACING.md,
+    marginBottom: 8,
+    gap: 6,
+  },
+  offlineWarningText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#991B1B',
+    flex: 1,
   },
 });
 

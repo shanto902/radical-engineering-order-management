@@ -16,6 +16,10 @@ export const ORDER_FIELDS = [
   'date_created',
   'date_updated',
   'extra_charges',
+  'last_updated_by.*',
+  'last_updated_by.first_name',
+  'last_updated_by.last_name',
+  'last_updated_by.email',
   'order_items.id',
   'order_items.quantity',
   'order_items.product.id',
@@ -376,14 +380,34 @@ export const ordersApi = {
 
   /**
    * Update status of an order (e.g. pending -> confirmed -> shipped)
+   * Passes last_updated_by user ID if provided so Directus m2o relation is recorded.
    */
-  async updateStatus(orderId: string, status: OrderStatus): Promise<Order> {
-    const result = await directus.request(
-      updateItem('orders' as any, orderId, {
-        status,
-      } as any)
-    );
-    return result as unknown as Order;
+  async updateStatus(
+    orderId: string,
+    status: OrderStatus,
+    userId?: string | null
+  ): Promise<Order> {
+    const payload: Record<string, any> = { status };
+    if (userId) {
+      payload.last_updated_by = userId;
+    }
+
+    try {
+      const result = await directus.request(
+        updateItem('orders' as any, orderId, payload as any, {
+          fields: ORDER_FIELDS as any,
+        })
+      );
+      return result as unknown as Order;
+    } catch (err) {
+      // In case Directus schema or permissions do not allow writing last_updated_by explicitly
+      const result = await directus.request(
+        updateItem('orders' as any, orderId, { status } as any, {
+          fields: ORDER_FIELDS as any,
+        })
+      );
+      return result as unknown as Order;
+    }
   },
 
   /**

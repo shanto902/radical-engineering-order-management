@@ -16,13 +16,15 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useOrders } from '../context/OrdersContext';
+import { useAuth } from '../context/AuthContext';
+import { useNetwork } from '../context/NetworkContext';
 import { ordersApi, normalizeExtraCharges } from '../services/ordersApi';
 import { OrderDetailSkeleton } from '../components/OrderDetailSkeleton';
 import { StatusBadge } from '../components/StatusBadge';
 import { StatusChangeModal } from '../components/StatusChangeModal';
 import { ExtraChargesModal } from '../components/ExtraChargesModal';
 import { invoiceService } from '../services/invoiceService';
-import { OrderStatus, ExtraCharge, Order } from '../types';
+import { OrderStatus, ExtraCharge, Order, getOrderUpdaterName } from '../types';
 import { APP_CONFIG } from '../constants/config';
 import { COLORS, RADIUS, SPACING, STATUS_MAP } from '../constants/theme';
 
@@ -31,6 +33,7 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
   navigation,
 }) => {
   const { orderId } = route.params;
+  const { user: currentUser } = useAuth();
   const {
     orders,
     updateStatus,
@@ -38,6 +41,7 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     defaultDeliveryCharge,
     markOrderAsViewed,
   } = useOrders();
+  const { isOnline } = useNetwork();
 
   const orderFromContext = orders.find((o) => o.id === orderId);
   const [order, setOrder] = useState<Order | null>(orderFromContext || null);
@@ -197,11 +201,34 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
 
   const handleUpdateStatus = async (newStatus: OrderStatus) => {
     if (!order) return;
+    if (!isOnline) {
+      Alert.alert(
+        'Offline Mode',
+        'Cannot update order status while offline. Please connect to the internet to save changes.'
+      );
+      return;
+    }
     const orderNum = order.order_id || order.id;
     const targetLabel = STATUS_MAP[newStatus]?.label || newStatus;
 
     // Immediately update local state so the screen never drops the order
-    setOrder((prev) => (prev ? { ...prev, status: newStatus } : null));
+    setOrder((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: newStatus,
+            date_updated: new Date().toISOString(),
+            last_updated_by: currentUser
+              ? {
+                  id: currentUser.id,
+                  first_name: currentUser.first_name,
+                  last_name: currentUser.last_name,
+                  email: currentUser.email,
+                }
+              : prev.last_updated_by,
+          }
+        : null
+    );
 
     const ok = await updateStatus(order.id, newStatus);
     if (ok) {
@@ -220,6 +247,13 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     newTotal: number
   ) => {
     if (!order) return;
+    if (!isOnline) {
+      Alert.alert(
+        'Offline Mode',
+        'Cannot save extra charges while offline. Please connect to the internet to save changes.'
+      );
+      return;
+    }
     setOrder((prev) =>
       prev ? { ...prev, extra_charges: charges, total: newTotal } : null
     );
@@ -269,6 +303,16 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       })
     : 'N/A';
 
+  const updaterName = getOrderUpdaterName(order.last_updated_by);
+  const updatedDateFormatted = order.date_updated
+    ? new Date(order.date_updated).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '';
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Top Header */}
@@ -300,17 +344,41 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Status Header Bar */}
         <View style={styles.statusBanner}>
-          <View>
-            <Text style={styles.statusBannerLabel}>CURRENT STATUS</Text>
-            <StatusBadge status={order.status} size="lg" />
+          <View style={styles.statusTopRow}>
+            <View style={styles.statusBadgeGroup}>
+              <Text style={styles.statusBannerLabel}>CURRENT STATUS</Text>
+              <StatusBadge status={order.status} size="lg" />
+            </View>
+
+            <TouchableOpacity
+              style={styles.changeStatusQuickBtn}
+              onPress={() => setStatusModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="create-outline" size={15} color={COLORS.primary} />
+              <Text style={styles.changeStatusQuickBtnText}>Change Status</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.changeStatusQuickBtn}
-            onPress={() => setStatusModalVisible(true)}
-          >
-            <Ionicons name="create-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.changeStatusQuickBtnText}>Change Status</Text>
-          </TouchableOpacity>
+
+          {updaterName && (
+            <View style={styles.statusUpdaterContainer}>
+              <View style={styles.statusUpdaterRow}>
+                <Ionicons
+                  name="person-circle-outline"
+                  size={15}
+                  color={COLORS.primary}
+                />
+                <Text
+                  style={styles.statusUpdaterText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  Changed by <Text style={styles.statusUpdaterName}>{updaterName}</Text>
+                  {updatedDateFormatted ? ` • ${updatedDateFormatted}` : ''}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Customer Information Card */}
@@ -507,6 +575,15 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
             <Ionicons name="calendar-outline" size={16} color={COLORS.textSecondary} />
             <Text style={styles.timelineText}>Placed: {dateFormatted}</Text>
           </View>
+          {updaterName && (
+            <View style={styles.timelineRow}>
+              <Ionicons name="person-circle-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.timelineText}>
+                Status Changed By: <Text style={{ fontWeight: '700', color: COLORS.text }}>{updaterName}</Text>
+                {updatedDateFormatted ? ` (${updatedDateFormatted})` : ''}
+              </Text>
+            </View>
+          )}
           <TouchableOpacity
             style={styles.copyOrderIdBtn}
             onPress={handleCopyOrderId}
@@ -605,9 +682,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   statusBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     backgroundColor: COLORS.white,
     padding: SPACING.md,
     borderRadius: RADIUS.md,
@@ -615,12 +689,42 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  statusTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  statusBadgeGroup: {
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
   statusBannerLabel: {
     fontSize: 10,
     fontWeight: '700',
     color: COLORS.textMuted,
     marginBottom: 6,
     letterSpacing: 0.5,
+  },
+  statusUpdaterContainer: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceVariant,
+  },
+  statusUpdaterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusUpdaterText: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    flex: 1,
+  },
+  statusUpdaterName: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   changeStatusQuickBtn: {
     flexDirection: 'row',
