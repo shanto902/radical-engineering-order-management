@@ -36,6 +36,8 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
   const { isOnline } = useNetwork();
   const [chargeName, setChargeName] = useState<string>('');
   const [chargeCost, setChargeCost] = useState<string>('');
+  const [discountName, setDiscountName] = useState<string>('');
+  const [discountAmount, setDiscountAmount] = useState<string>('');
   const [chargesList, setChargesList] = useState<ExtraCharge[]>([]);
   const [saving, setSaving] = useState<boolean>(false);
 
@@ -63,7 +65,15 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
     0
   );
 
-  const calculatedGrandTotal = itemsSubtotal + extraChargesSum;
+  const positiveChargesSum = chargesList
+    .filter((ch) => Number(ch.cost || 0) > 0)
+    .reduce((sum, ch) => sum + Number(ch.cost || 0), 0);
+
+  const discountChargesSum = chargesList
+    .filter((ch) => Number(ch.cost || 0) < 0)
+    .reduce((sum, ch) => sum + Math.abs(Number(ch.cost || 0)), 0);
+
+  const calculatedGrandTotal = Math.max(0, itemsSubtotal + extraChargesSum);
 
   const presets = [
     {
@@ -116,6 +126,40 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
     setChargesList(updated);
     setChargeName('');
     setChargeCost('');
+  };
+
+  const handleAddDiscount = () => {
+    const rawVal = discountAmount.trim();
+    if (!rawVal) {
+      Alert.alert('Required', 'Please enter a discount amount (e.g. 100).');
+      return;
+    }
+    const costNum = parseFloat(rawVal);
+    if (isNaN(costNum) || costNum === 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid positive discount amount to deduct.');
+      return;
+    }
+    // Convert to negative cost: e.g. 100 -> -100
+    const negativeCost = -Math.abs(costNum);
+    const name = discountName.trim() || 'Special Discount';
+
+    // Verify order total wouldn't become negative
+    const proposedCharges = [...chargesList, { name, cost: negativeCost }];
+    const proposedExtraSum = proposedCharges.reduce(
+      (sum, ch) => sum + Number(ch.cost || 0),
+      0
+    );
+    if (itemsSubtotal + proposedExtraSum < 0) {
+      Alert.alert(
+        'Discount Too High',
+        'Discount cannot exceed the total payable amount for this order.'
+      );
+      return;
+    }
+
+    setChargesList(proposedCharges);
+    setDiscountName('');
+    setDiscountAmount('');
   };
 
   const handleRemoveCharge = (index: number) => {
@@ -186,13 +230,21 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
                     </View>
                   </View>
 
-                  {/* Current Extra Charges Repeater List */}
+                  {/* Current Extra Charges & Adjustments Repeater List */}
                   <View style={styles.chargesListContainer}>
                     <View style={styles.sectionHeaderRow}>
-                      <Text style={styles.sectionLabel}>CURRENT CHARGES ({chargesList.length})</Text>
+                      <Text style={styles.sectionLabel}>
+                        CURRENT CHARGES & ADJUSTMENTS ({chargesList.length})
+                      </Text>
                       {chargesList.length > 0 && (
-                        <Text style={styles.chargesSubtotalBadge}>
-                          Total: ৳{extraChargesSum.toLocaleString()}
+                        <Text
+                          style={[
+                            styles.chargesSubtotalBadge,
+                            extraChargesSum < 0 && { color: '#059669' },
+                          ]}
+                        >
+                          Net:{' '}
+                          {extraChargesSum < 0 ? '-' : '+'}৳{Math.abs(extraChargesSum).toLocaleString()}
                         </Text>
                       )}
                     </View>
@@ -200,37 +252,78 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
                     {chargesList.length === 0 ? (
                       <View style={styles.emptyBox}>
                         <Ionicons name="receipt-outline" size={24} color={COLORS.textMuted} />
-                        <Text style={styles.emptyText}>No extra charges added yet.</Text>
+                        <Text style={styles.emptyText}>No extra charges or discounts added yet.</Text>
                       </View>
                     ) : (
-                      chargesList.map((item, idx) => (
-                        <View key={idx} style={styles.chargeRow}>
-                          <View style={styles.chargeRowLeft}>
-                            <View style={styles.chargeIconBadge}>
-                              <Ionicons name="pricetag-outline" size={14} color={COLORS.primary} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.chargeName}>{item.name}</Text>
-                              <Text style={styles.chargeCost}>
-                                + ৳{Number(item.cost).toLocaleString()}
-                              </Text>
-                            </View>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => handleRemoveCharge(idx)}
-                            style={styles.deleteBtn}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      chargesList.map((item, idx) => {
+                        const costNum = Number(item.cost || 0);
+                        const isDiscount = costNum < 0;
+                        return (
+                          <View
+                            key={idx}
+                            style={[
+                              styles.chargeRow,
+                              isDiscount && styles.discountChargeRow,
+                            ]}
                           >
-                            <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
-                          </TouchableOpacity>
-                        </View>
-                      ))
+                            <View style={styles.chargeRowLeft}>
+                              <View
+                                style={[
+                                  styles.chargeIconBadge,
+                                  isDiscount && styles.discountChargeIconBadge,
+                                ]}
+                              >
+                                <Ionicons
+                                  name={isDiscount ? 'gift-outline' : 'pricetag-outline'}
+                                  size={14}
+                                  color={isDiscount ? '#059669' : COLORS.primary}
+                                />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text
+                                    style={[
+                                      styles.chargeName,
+                                      isDiscount && { color: '#065F46' },
+                                    ]}
+                                  >
+                                    {item.name}
+                                  </Text>
+                                  {isDiscount && (
+                                    <View style={styles.discountBadgeTag}>
+                                      <Text style={styles.discountBadgeTagText}>Discount</Text>
+                                    </View>
+                                  )}
+                                </View>
+                                <Text
+                                  style={[
+                                    styles.chargeCost,
+                                    isDiscount && { color: '#059669' },
+                                  ]}
+                                >
+                                  {isDiscount ? '-' : '+'} ৳{Math.abs(costNum).toLocaleString()}
+                                </Text>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => handleRemoveCharge(idx)}
+                              style={styles.deleteBtn}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })
                     )}
                   </View>
 
-                  {/* Add New Charge Form */}
+                  {/* Card 1: Add Custom Extra Charge Form */}
                   <View style={styles.addSection}>
-                    <Text style={styles.sectionLabel}>ADD CUSTOM CHARGE</Text>
+                    <View style={styles.cardHeaderWithIcon}>
+                      <Ionicons name="add-circle-outline" size={15} color={COLORS.primary} />
+                      <Text style={styles.sectionLabel}>ADD EXTRA CHARGE (ADDITION)</Text>
+                    </View>
                     <TextInput
                       style={styles.input}
                       placeholder="Charge Name (e.g. Delivery, Fitting, Extra Cable)"
@@ -249,7 +342,74 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
                       />
                       <TouchableOpacity style={styles.addBtn} onPress={handleAddCharge}>
                         <Ionicons name="add" size={18} color={COLORS.white} />
-                        <Text style={styles.addBtnText}>Add</Text>
+                        <Text style={styles.addBtnText}>Add Charge</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Card 2: Discount / Deduction Form (Negative Amount) */}
+                  <View style={styles.discountSection}>
+                    <View style={styles.discountHeaderRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="gift-outline" size={15} color="#059669" />
+                        <Text style={styles.discountSectionLabel}>DISCOUNT / DEDUCTION</Text>
+                      </View>
+                      <View style={styles.discountDeductBadge}>
+                        <Text style={styles.discountDeductBadgeText}>Deducts from Total</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.discountHelperText}>
+                      Enter discount to deduct from total (sent as negative amount like -100).
+                    </Text>
+
+                    {/* Quick Preset Discount Pills */}
+                    <View style={styles.discountPresetsRow}>
+                      {[50, 100, 200, 500].map((amt) => (
+                        <TouchableOpacity
+                          key={amt}
+                          style={[
+                            styles.discountPresetChip,
+                            discountAmount === String(amt) && styles.discountPresetChipActive,
+                          ]}
+                          onPress={() => {
+                            setDiscountAmount(String(amt));
+                            if (!discountName) setDiscountName('Special Discount');
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.discountPresetChipText,
+                              discountAmount === String(amt) && styles.discountPresetChipTextActive,
+                            ]}
+                          >
+                            -৳{amt}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <TextInput
+                      style={[styles.input, styles.discountInput]}
+                      placeholder="Discount Reason (e.g. Special Discount, Promo, Round-off)"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={discountName}
+                      onChangeText={setDiscountName}
+                    />
+                    <View style={styles.costRow}>
+                      <TextInput
+                        style={[styles.input, styles.discountInput, { flex: 1, marginBottom: 0 }]}
+                        placeholder="Deduction Amount (৳, e.g. 100)"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="numeric"
+                        value={discountAmount}
+                        onChangeText={setDiscountAmount}
+                      />
+                      <TouchableOpacity
+                        style={styles.applyDiscountBtn}
+                        onPress={handleAddDiscount}
+                      >
+                        <Ionicons name="remove-circle-outline" size={16} color={COLORS.white} />
+                        <Text style={styles.applyDiscountBtnText}>Apply</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -260,12 +420,22 @@ export const ExtraChargesModal: React.FC<ExtraChargesModalProps> = ({
                       <Text style={styles.summaryLabel}>Products Subtotal:</Text>
                       <Text style={styles.summaryVal}>৳{itemsSubtotal.toLocaleString()}</Text>
                     </View>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Extra Charges Total:</Text>
-                      <Text style={[styles.summaryVal, { color: COLORS.accent }]}>
-                        + ৳{extraChargesSum.toLocaleString()}
-                      </Text>
-                    </View>
+                    {positiveChargesSum > 0 && (
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Extra Charges Total:</Text>
+                        <Text style={[styles.summaryVal, { color: COLORS.accent }]}>
+                          + ৳{positiveChargesSum.toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                    {discountChargesSum > 0 && (
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Discounts Deducted:</Text>
+                        <Text style={[styles.summaryVal, { color: '#059669', fontWeight: '700' }]}>
+                          - ৳{discountChargesSum.toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
                     <View style={[styles.summaryRow, styles.grandTotalRow]}>
                       <Text style={styles.grandTotalLabel}>Recalculated Grand Total:</Text>
                       <Text style={styles.grandTotalVal}>
@@ -437,6 +607,113 @@ const styles = StyleSheet.create({
   deleteBtn: {
     padding: 6,
     marginLeft: 8,
+  },
+  discountChargeRow: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  discountChargeIconBadge: {
+    backgroundColor: '#DCFCE7',
+  },
+  discountBadgeTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  discountBadgeTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+    textTransform: 'uppercase',
+  },
+  cardHeaderWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  discountSection: {
+    marginBottom: SPACING.md,
+    backgroundColor: '#F0FDF4',
+    padding: 12,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  discountHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  discountSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.6,
+  },
+  discountDeductBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  discountDeductBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+    textTransform: 'uppercase',
+  },
+  discountHelperText: {
+    fontSize: 11,
+    color: '#047857',
+    marginBottom: 10,
+    lineHeight: 15,
+  },
+  discountPresetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  discountPresetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.xs,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  discountPresetChipActive: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  discountPresetChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  discountPresetChipTextActive: {
+    color: COLORS.white,
+  },
+  discountInput: {
+    borderColor: '#86EFAC',
+  },
+  applyDiscountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    borderRadius: RADIUS.xs,
+    gap: 4,
+  },
+  applyDiscountBtnText: {
+    color: COLORS.white,
+    fontWeight: '700',
+    fontSize: 13,
   },
   addSection: {
     marginBottom: SPACING.md,

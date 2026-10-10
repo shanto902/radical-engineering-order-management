@@ -126,6 +126,14 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
     0
   );
 
+  const positiveChargesSum = extraCharges
+    .filter((ch: ExtraCharge) => Number(ch.cost || 0) > 0)
+    .reduce((sum: number, ch: ExtraCharge) => sum + Number(ch.cost || 0), 0);
+
+  const discountChargesSum = extraCharges
+    .filter((ch: ExtraCharge) => Number(ch.cost || 0) < 0)
+    .reduce((sum: number, ch: ExtraCharge) => sum + Math.abs(Number(ch.cost || 0)), 0);
+
   // If order total had a pre-added checkout delivery charge, sync it to local state & database
   // (Hook is positioned before conditional returns to adhere to React Rules of Hooks)
   useEffect(() => {
@@ -442,6 +450,20 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
               ? `${APP_CONFIG.assetsBaseUrl}/${product.image}`
               : null;
 
+            const weightStr =
+              product?.weight !== undefined && product?.weight !== null
+                ? String(product.weight).trim()
+                : '';
+            const formattedWeight =
+              weightStr && /^[0-9]+(\.[0-9]+)?$/.test(weightStr)
+                ? `${weightStr} kg`
+                : weightStr;
+
+            const metaParts: string[] = [];
+            if (product?.sku) metaParts.push(`SKU: ${product.sku}`);
+            if (formattedWeight) metaParts.push(`Weight: ${formattedWeight}`);
+            const metaLine = metaParts.join(' | ');
+
             return (
               <View key={it.id || idx} style={styles.itemRow}>
                 {imgUrl ? (
@@ -453,9 +475,9 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
                 )}
                 <View style={styles.itemDetails}>
                   <Text style={styles.itemTitle}>{product?.name || 'Product'}</Text>
-                  {product?.sku && (
-                    <Text style={styles.itemSku}>SKU: {product.sku}</Text>
-                  )}
+                  {metaLine ? (
+                    <Text style={styles.itemSku}>{metaLine}</Text>
+                  ) : null}
                   <Text style={styles.itemQtyPrice}>
                     {it.quantity} x ৳{price.toLocaleString()}
                   </Text>
@@ -497,7 +519,14 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
                   onPress={() => setExtraChargesModalVisible(true)}
                 >
                   <Ionicons name="add-circle" size={15} color={COLORS.white} />
-                  <Text style={styles.addChargeButtonText}>Add Extra Charge</Text>
+                  <Text style={styles.addChargeButtonText}>Add Charge</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addDiscountButton}
+                  onPress={() => setExtraChargesModalVisible(true)}
+                >
+                  <Ionicons name="gift-outline" size={14} color="#059669" />
+                  <Text style={styles.addDiscountButtonText}>Add Discount</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.quickPresetChip}
@@ -516,19 +545,57 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
             </View>
           ) : (
             <View style={styles.extraChargesList}>
-              {extraCharges.map((ch, idx) => (
-                <View key={idx} style={styles.extraChargeItem}>
-                  <View style={styles.extraChargeItemLeft}>
-                    <View style={styles.extraChargeIcon}>
-                      <Ionicons name="pricetag-outline" size={12} color={COLORS.primary} />
+              {extraCharges.map((ch, idx) => {
+                const costNum = Number(ch.cost || 0);
+                const isDiscount = costNum < 0;
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.extraChargeItem,
+                      isDiscount && styles.discountChargeItem,
+                    ]}
+                  >
+                    <View style={styles.extraChargeItemLeft}>
+                      <View
+                        style={[
+                          styles.extraChargeIcon,
+                          isDiscount && styles.discountChargeIcon,
+                        ]}
+                      >
+                        <Ionicons
+                          name={isDiscount ? 'gift-outline' : 'pricetag-outline'}
+                          size={12}
+                          color={isDiscount ? '#059669' : COLORS.primary}
+                        />
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text
+                          style={[
+                            styles.extraChargeName,
+                            isDiscount && { color: '#065F46' },
+                          ]}
+                        >
+                          {ch.name}
+                        </Text>
+                        {isDiscount && (
+                          <View style={styles.discountBadgeSmall}>
+                            <Text style={styles.discountBadgeSmallText}>Discount</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                    <Text style={styles.extraChargeName}>{ch.name}</Text>
+                    <Text
+                      style={[
+                        styles.extraChargeAmount,
+                        isDiscount && { color: '#059669' },
+                      ]}
+                    >
+                      {isDiscount ? '-' : '+'} ৳{Math.abs(costNum).toLocaleString()}
+                    </Text>
                   </View>
-                  <Text style={styles.extraChargeAmount}>
-                    + ৳{Number(ch.cost).toLocaleString()}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
               <View style={styles.extraChargesFooter}>
                 <TouchableOpacity
                   style={styles.addMoreChargesLink}
@@ -537,8 +604,13 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
                   <Ionicons name="add" size={15} color={COLORS.primary} />
                   <Text style={styles.addMoreChargesLinkText}>Add / Edit More</Text>
                 </TouchableOpacity>
-                <Text style={styles.extraChargesTotalBadge}>
-                  Total: ৳{extraChargesSum.toLocaleString()}
+                <Text
+                  style={[
+                    styles.extraChargesTotalBadge,
+                    extraChargesSum < 0 && { color: '#059669' },
+                  ]}
+                >
+                  Net: {extraChargesSum < 0 ? '-' : '+'}৳{Math.abs(extraChargesSum).toLocaleString()}
                 </Text>
               </View>
             </View>
@@ -552,11 +624,19 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
             <Text style={styles.summaryLabel}>Items Subtotal</Text>
             <Text style={styles.summaryValue}>৳{itemsSubtotal.toLocaleString()}</Text>
           </View>
-          {extraChargesSum > 0 && (
+          {positiveChargesSum > 0 && (
             <View style={styles.summaryLine}>
               <Text style={styles.summaryLabel}>Extra Charges & Delivery</Text>
               <Text style={[styles.summaryValue, { color: COLORS.primary }]}>
-                + ৳{extraChargesSum.toLocaleString()}
+                + ৳{positiveChargesSum.toLocaleString()}
+              </Text>
+            </View>
+          )}
+          {discountChargesSum > 0 && (
+            <View style={styles.summaryLine}>
+              <Text style={styles.summaryLabel}>Discount & Deductions</Text>
+              <Text style={[styles.summaryValue, { color: '#059669', fontWeight: '700' }]}>
+                - ৳{discountChargesSum.toLocaleString()}
               </Text>
             </View>
           )}
@@ -874,6 +954,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textMuted,
   },
+  itemWeight: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
   itemQtyPrice: {
     fontSize: 12,
     color: COLORS.textSecondary,
@@ -919,6 +1004,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  addDiscountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: RADIUS.xs,
+    gap: 4,
+  },
+  addDiscountButtonText: {
+    color: '#059669',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   quickPresetChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -948,6 +1049,11 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xs,
     marginBottom: 6,
   },
+  discountChargeItem: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
   extraChargeItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -961,6 +1067,21 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  discountChargeIcon: {
+    backgroundColor: '#DCFCE7',
+  },
+  discountBadgeSmall: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  discountBadgeSmallText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+    textTransform: 'uppercase',
   },
   extraChargeName: {
     fontSize: 13,

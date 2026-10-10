@@ -28,6 +28,7 @@ export const ORDER_FIELDS = [
   'order_items.product.discounted_price',
   'order_items.product.image',
   'order_items.product.sku',
+  'order_items.product.weight',
 ] as const;
 
 export interface FetchOrdersParams {

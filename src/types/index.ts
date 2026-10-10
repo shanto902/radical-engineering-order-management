@@ -25,6 +25,7 @@ export interface Product {
   image?: string | null;
   sku?: string | null;
   category?: number | string | null;
+  weight?: string | number | null;
 }
 
 export interface OrderItem {

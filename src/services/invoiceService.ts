@@ -1,8 +1,28 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { APP_CONFIG } from '../constants/config';
 import { Order } from '../types';
 import { normalizeExtraCharges } from './ordersApi';
+
+/**
+ * Formats a clean, safe filename for an order invoice: "customername-orderid.pdf"
+ */
+export const formatInvoiceFileName = (order: Order): string => {
+  const rawCustomer = (order.name || 'Customer').trim();
+  const rawOrderId = (order.order_id || order.id || 'Order').trim();
+
+  const cleanCustomer = rawCustomer
+    .replace(/[\/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+
+  const cleanOrderId = rawOrderId
+    .replace(/[\/\\:*?"<>|]/g, '')
+    .replace(/\s+/g, '-');
+
+  return `${cleanCustomer}-${cleanOrderId}.pdf`;
+};
 
 export const invoiceService = {
   /**
@@ -50,10 +70,24 @@ export const invoiceService = {
               const qty = Number(item.quantity || 1);
               const lineTotal = price * qty;
 
+              const metaParts = [];
+              if (prod?.sku) metaParts.push(`SKU: ${prod.sku}`);
+              if (prod?.weight) {
+                const wStr = String(prod.weight).trim();
+                const formattedW = /^[0-9]+(\.[0-9]+)?$/.test(wStr) ? `${wStr} kg` : wStr;
+                metaParts.push(`Weight: ${formattedW}`);
+              }
+              const metaSub = metaParts.length > 0
+                ? `<div style="font-size: 11px; color: #64748B; font-weight: 400; margin-top: 2px;">${metaParts.join(' | ')}</div>`
+                : '';
+
               return `
               <tr style="border-bottom: 1px solid #E2E8F0;">
                 <td style="padding: 10px 12px; text-align: center; color: #64748B;">${index + 1}</td>
-                <td style="padding: 10px 12px; font-weight: 600; color: #0F172A;">${name}</td>
+                <td style="padding: 10px 12px; font-weight: 600; color: #0F172A;">
+                  ${name}
+                  ${metaSub}
+                </td>
                 <td style="padding: 10px 12px; text-align: right; color: #334155;">৳${isNaN(price) ? '0' : price.toLocaleString()}</td>
                 <td style="padding: 10px 12px; text-align: center; font-weight: 600; color: #0F172A;">${qty}</td>
                 <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #3C1100;">৳${isNaN(lineTotal) ? '0' : lineTotal.toLocaleString()}</td>
@@ -73,16 +107,33 @@ export const invoiceService = {
       rawItems
     );
 
+    const itemsSubtotal = rawItems.reduce((sum: number, it: any) => {
+      const price = it.product?.discounted_price
+        ? Number(it.product.discounted_price)
+        : Number(it.product?.price || it.price || 0);
+      return sum + (isNaN(price) ? 0 : price) * Number(it.quantity || 1);
+    }, 0);
+
+    const positiveExtra = extraCharges
+      .filter((c: any) => Number(c.cost || 0) > 0)
+      .reduce((sum: number, c: any) => sum + Number(c.cost || 0), 0);
+
+    const negativeExtra = extraCharges
+      .filter((c: any) => Number(c.cost || 0) < 0)
+      .reduce((sum: number, c: any) => sum + Math.abs(Number(c.cost || 0)), 0);
+
     const extraChargesHtml = extraCharges
       .map((ch: any) => {
         const cost = Number(ch.cost || 0);
+        const isDiscount = cost < 0;
+        const absCost = Math.abs(cost);
         return `
-        <tr style="border-bottom: 1px solid #E2E8F0; background: #FFFBEB;">
-          <td style="padding: 10px 12px; text-align: center; color: #D97706;">+</td>
-          <td style="padding: 10px 12px; color: #92400E; font-weight: 500;">${ch.name || 'Extra Service'} (Service / Delivery)</td>
-          <td style="padding: 10px 12px; text-align: right; color: #92400E;">৳${isNaN(cost) ? '0' : cost.toLocaleString()}</td>
-          <td style="padding: 10px 12px; text-align: center; color: #92400E;">1</td>
-          <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #92400E;">৳${isNaN(cost) ? '0' : cost.toLocaleString()}</td>
+        <tr style="border-bottom: 1px solid #E2E8F0; background: ${isDiscount ? '#ECFDF5' : '#FFFBEB'};">
+          <td style="padding: 10px 12px; text-align: center; color: ${isDiscount ? '#059669' : '#D97706'}; font-weight: 700;">${isDiscount ? '-' : '+'}</td>
+          <td style="padding: 10px 12px; color: ${isDiscount ? '#065F46' : '#92400E'}; font-weight: 500;">${ch.name || (isDiscount ? 'Special Discount' : 'Extra Service')}</td>
+          <td style="padding: 10px 12px; text-align: right; color: ${isDiscount ? '#065F46' : '#92400E'};">${isDiscount ? '-' : ''}৳${isNaN(absCost) ? '0' : absCost.toLocaleString()}</td>
+          <td style="padding: 10px 12px; text-align: center; color: ${isDiscount ? '#065F46' : '#92400E'};">1</td>
+          <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: ${isDiscount ? '#059669' : '#92400E'};">${isDiscount ? '-' : ''}৳${isNaN(absCost) ? '0' : absCost.toLocaleString()}</td>
         </tr>
       `;
       })
@@ -94,6 +145,7 @@ export const invoiceService = {
       <!DOCTYPE html>
       <html>
         <head>
+          <title>${formatInvoiceFileName(order).replace(/\.pdf$/i, '')}</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
           <style>
             * { box-sizing: border-box; }
@@ -292,8 +344,18 @@ export const invoiceService = {
             <div class="total-box">
               <div class="total-row">
                 <span>Items Subtotal:</span>
-                <span>৳${totalNumber.toLocaleString()}</span>
+                <span>৳${itemsSubtotal.toLocaleString()}</span>
               </div>
+              ${positiveExtra > 0 ? `
+              <div class="total-row">
+                <span>Extra Charges & Delivery:</span>
+                <span>+ ৳${positiveExtra.toLocaleString()}</span>
+              </div>` : ''}
+              ${negativeExtra > 0 ? `
+              <div class="total-row" style="color: #059669; font-weight: 600;">
+                <span>Discount / Deduction:</span>
+                <span>- ৳${negativeExtra.toLocaleString()}</span>
+              </div>` : ''}
               <div class="total-grand">
                 <span>Grand Total:</span>
                 <span>৳${totalNumber.toLocaleString()}</span>
@@ -311,14 +373,37 @@ export const invoiceService = {
   },
 
   /**
-   * Generates a PDF file and returns its URI
+   * Generates a PDF file with customername-orderid naming and returns its URI
    */
   async generatePdf(order: Order): Promise<string> {
     const html = this.buildInvoiceHtml(order);
-    const { uri } = await Print.printToFileAsync({
+    const fileName = formatInvoiceFileName(order);
+    const { uri, base64 } = await Print.printToFileAsync({
       html,
-      base64: false,
+      base64: true,
     });
+
+    try {
+      if (FileSystem.cacheDirectory) {
+        const destPath = `${FileSystem.cacheDirectory}${fileName}`;
+        if (base64) {
+          await FileSystem.writeAsStringAsync(destPath, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          return destPath;
+        } else {
+          await FileSystem.deleteAsync(destPath, { idempotent: true }).catch(() => {});
+          await FileSystem.copyAsync({
+            from: uri,
+            to: destPath,
+          });
+          return destPath;
+        }
+      }
+    } catch (writeErr) {
+      console.warn('Could not write PDF with custom filename, using temp URI:', writeErr);
+    }
+
     return uri;
   },
 
@@ -331,25 +416,50 @@ export const invoiceService = {
   },
 
   /**
-   * Generates PDF and opens the native OS Share dialog (WhatsApp, email, drive)
+   * Generates PDF with "customername-orderid.pdf" filename and opens the native OS Share dialog (WhatsApp, email, drive)
    * With automatic fallback to system Print / Save as PDF if direct file sharing is restricted (e.g. Expo Go sandbox)
    */
   async shareInvoice(order: Order): Promise<boolean> {
     const html = this.buildInvoiceHtml(order);
+    const fileName = formatInvoiceFileName(order);
+    const baseName = fileName.replace(/\.pdf$/i, '');
 
-    // 1. Attempt native file sharing (works on standalone APK build)
+    // 1. Attempt native file sharing with named PDF (works on standalone APK / physical device)
     try {
       const isAvailable = await Sharing.isAvailableAsync().catch(() => false);
       if (isAvailable) {
-        const { uri } = await Print.printToFileAsync({
+        const { uri, base64 } = await Print.printToFileAsync({
           html,
-          base64: false,
+          base64: true,
         });
 
-        await Sharing.shareAsync(uri, {
+        let targetUri = uri;
+        try {
+          if (FileSystem.cacheDirectory) {
+            const destPath = `${FileSystem.cacheDirectory}${fileName}`;
+            if (base64) {
+              // Writing base64 directly into the scoped cache directory bypasses Expo Go's unreadable Print/ cache limitation
+              await FileSystem.writeAsStringAsync(destPath, base64, {
+                encoding: FileSystem.EncodingType.Base64,
+              });
+              targetUri = destPath;
+            } else {
+              await FileSystem.deleteAsync(destPath, { idempotent: true }).catch(() => {});
+              await FileSystem.copyAsync({
+                from: uri,
+                to: destPath,
+              });
+              targetUri = destPath;
+            }
+          }
+        } catch (fileErr) {
+          console.warn('Could not write custom filename for sharing, using temp URI:', fileErr);
+        }
+
+        await Sharing.shareAsync(targetUri, {
           UTI: 'com.adobe.pdf',
           mimeType: 'application/pdf',
-          dialogTitle: `Radical Engineering Invoice #${order.order_id || order.id}`,
+          dialogTitle: `${baseName}.pdf`,
         });
         return true;
       }
