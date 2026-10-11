@@ -26,6 +26,7 @@ import { ExtraChargesModal } from '../components/ExtraChargesModal';
 import { invoiceService } from '../services/invoiceService';
 import { OrderStatus, ExtraCharge, Order, getOrderUpdaterName } from '../types';
 import { APP_CONFIG } from '../constants/config';
+import { parseDeliveryInfo } from '../utils/addressUtils';
 import { COLORS, RADIUS, SPACING, STATUS_MAP } from '../constants/theme';
 
 export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
@@ -321,6 +322,8 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
       })
     : '';
 
+  const deliveryInfo = parseDeliveryInfo(order.address);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       {/* Top Header */}
@@ -422,14 +425,74 @@ export const OrderDetailScreen: React.FC<{ route: any; navigation: any }> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Delivery Address */}
+          {/* Fulfillment Method Badge (Store Pickup / Home Delivery) */}
+          {deliveryInfo.fulfillmentLabel && (
+            <View style={styles.fulfillmentRow}>
+              <View
+                style={[
+                  styles.fulfillmentBadge,
+                  deliveryInfo.fulfillmentType === 'store_pickup'
+                    ? styles.fulfillmentBadgePickup
+                    : styles.fulfillmentBadgeDelivery,
+                ]}
+              >
+                <Ionicons
+                  name={
+                    deliveryInfo.fulfillmentType === 'store_pickup'
+                      ? 'storefront-outline'
+                      : 'bicycle-outline'
+                  }
+                  size={14}
+                  color={
+                    deliveryInfo.fulfillmentType === 'store_pickup'
+                      ? '#9A3412'
+                      : '#065F46'
+                  }
+                />
+                <Text
+                  style={[
+                    styles.fulfillmentBadgeText,
+                    deliveryInfo.fulfillmentType === 'store_pickup'
+                      ? styles.fulfillmentBadgeTextPickup
+                      : styles.fulfillmentBadgeTextDelivery,
+                  ]}
+                >
+                  {deliveryInfo.fulfillmentLabel.toUpperCase()}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Delivery & Site Section */}
           <View style={styles.addressSection}>
-            <Ionicons name="location" size={18} color={COLORS.primary} />
+            <Ionicons
+              name={
+                deliveryInfo.fulfillmentType === 'store_pickup'
+                  ? 'business-outline'
+                  : 'location-outline'
+              }
+              size={18}
+              color={COLORS.primary}
+            />
             <View style={{ flex: 1, marginLeft: 8 }}>
-              <Text style={styles.addressLabel}>Delivery & Installation Site:</Text>
-              <Text style={styles.addressValue}>
-                {order.address || 'Standard Delivery'}
+              <Text style={styles.addressLabel}>
+                {deliveryInfo.fulfillmentType === 'store_pickup'
+                  ? 'Fulfillment & Collection Site:'
+                  : 'Delivery & Installation Site:'}
               </Text>
+              <Text style={styles.addressValue}>
+                {deliveryInfo.cleanAddress}
+              </Text>
+
+              {deliveryInfo.specialNotes.length > 0 && (
+                <View style={styles.specialNoteBox}>
+                  <Ionicons name="document-text-outline" size={13} color="#B45309" />
+                  <Text style={styles.specialNoteText}>
+                    <Text style={{ fontWeight: '700' }}>Special Note: </Text>
+                    {deliveryInfo.specialNotes.join(' • ')}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -901,6 +964,58 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.text,
+  },
+  fulfillmentRow: {
+    flexDirection: 'row',
+    marginTop: SPACING.sm,
+  },
+  fulfillmentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: RADIUS.xs,
+    alignSelf: 'flex-start',
+  },
+  fulfillmentBadgePickup: {
+    backgroundColor: '#FFEDD5',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+  },
+  fulfillmentBadgeDelivery: {
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+  },
+  fulfillmentBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  fulfillmentBadgeTextPickup: {
+    color: '#9A3412',
+  },
+  fulfillmentBadgeTextDelivery: {
+    color: '#065F46',
+  },
+  specialNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: RADIUS.xs,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    marginTop: 8,
+    gap: 6,
+  },
+  specialNoteText: {
+    fontSize: 11.5,
+    color: '#92400E',
+    flex: 1,
+    lineHeight: 16,
   },
   addressSection: {
     flexDirection: 'row',

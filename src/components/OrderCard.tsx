@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Order } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { parseDeliveryInfo } from '../utils/addressUtils';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 interface OrderCardProps {
@@ -51,6 +52,8 @@ export const OrderCard: React.FC<OrderCardProps> = ({
         minute: '2-digit',
       })
     : '';
+
+  const deliveryInfo = parseDeliveryInfo(order.address);
 
   const cleanPhone = (order.phone || '').replace(/[\s\-\(\)]/g, '');
 
@@ -120,12 +123,45 @@ export const OrderCard: React.FC<OrderCardProps> = ({
           <View style={styles.customerNameRow}>
             <Ionicons name="person" size={15} color={COLORS.primary} />
             <Text style={styles.customerName}>{order.name || 'Customer'}</Text>
+            {deliveryInfo.fulfillmentLabel && (
+              <View
+                style={[
+                  styles.cardFulfillmentBadge,
+                  deliveryInfo.fulfillmentType === 'store_pickup'
+                    ? styles.cardFulfillmentPickup
+                    : styles.cardFulfillmentDelivery,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.cardFulfillmentText,
+                    deliveryInfo.fulfillmentType === 'store_pickup'
+                      ? styles.cardFulfillmentTextPickup
+                      : styles.cardFulfillmentTextDelivery,
+                  ]}
+                >
+                  {deliveryInfo.fulfillmentLabel}
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.metaRow}>
-            <Ionicons name="location-outline" size={14} color={COLORS.textSecondary} />
+            <Ionicons
+              name={
+                deliveryInfo.fulfillmentType === 'store_pickup'
+                  ? 'storefront-outline'
+                  : 'location-outline'
+              }
+              size={14}
+              color={
+                deliveryInfo.fulfillmentType === 'store_pickup'
+                  ? '#EA580C'
+                  : COLORS.textSecondary
+              }
+            />
             <Text style={styles.addressText} numberOfLines={1}>
-              {order.address || 'Address not specified'}
+              {deliveryInfo.cleanAddress}
             </Text>
           </View>
 
@@ -282,6 +318,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
     marginLeft: 6,
+  },
+  cardFulfillmentBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  cardFulfillmentPickup: {
+    backgroundColor: '#FFEDD5',
+  },
+  cardFulfillmentDelivery: {
+    backgroundColor: '#D1FAE5',
+  },
+  cardFulfillmentText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  cardFulfillmentTextPickup: {
+    color: '#9A3412',
+  },
+  cardFulfillmentTextDelivery: {
+    color: '#065F46',
   },
   metaRow: {
     flexDirection: 'row',

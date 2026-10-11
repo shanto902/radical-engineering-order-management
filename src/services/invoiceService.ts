@@ -2,8 +2,10 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { APP_CONFIG } from '../constants/config';
+import { RADICAL_LOGO_SVG } from '../constants/logoSvg';
 import { Order } from '../types';
 import { normalizeExtraCharges } from './ordersApi';
+import { parseDeliveryInfo } from '../utils/addressUtils';
 
 /**
  * Formats a clean, safe filename for an order invoice: "customername-orderid.pdf"
@@ -26,17 +28,23 @@ export const formatInvoiceFileName = (order: Order): string => {
 
 export const invoiceService = {
   /**
-   * Builds high quality printable HTML for an order invoice
+   * Builds high quality printable HTML for an order invoice reflecting
+   * official Radical Engineering branding (matching quotationPdf.ts).
    */
   buildInvoiceHtml(order: Order): string {
     let dateFormatted = '';
     try {
       dateFormatted = order.placed_at
-        ? new Date(order.placed_at).toLocaleString('en-US', {
-            dateStyle: 'medium',
-            timeStyle: 'short',
+        ? new Date(order.placed_at).toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
           })
-        : new Date().toLocaleDateString('en-US');
+        : new Date().toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          });
     } catch {
       dateFormatted = String(order.placed_at || '');
     }
@@ -55,6 +63,17 @@ export const invoiceService = {
       }
     }
 
+    const totalItemsQty = rawItems.reduce(
+      (sum: number, it: any) => sum + (Number(it.quantity) || 1),
+      0
+    );
+
+    // Vector logo scaled for print
+    const formattedLogoSvg = RADICAL_LOGO_SVG.replace(
+      /<svg\s+width="1497"\s+height="259"/i,
+      '<svg width="220" height="38" style="display: block; border-radius: 4px;"'
+    );
+
     const itemsHtml =
       rawItems.length > 0
         ? rawItems
@@ -70,34 +89,49 @@ export const invoiceService = {
               const qty = Number(item.quantity || 1);
               const lineTotal = price * qty;
 
-              const metaParts = [];
+              const metaParts: string[] = [];
               if (prod?.sku) metaParts.push(`SKU: ${prod.sku}`);
               if (prod?.weight) {
                 const wStr = String(prod.weight).trim();
-                const formattedW = /^[0-9]+(\.[0-9]+)?$/.test(wStr) ? `${wStr} kg` : wStr;
+                const formattedW = /^[0-9]+(\.[0-9]+)?$/.test(wStr)
+                  ? `${wStr} kg`
+                  : wStr;
                 metaParts.push(`Weight: ${formattedW}`);
               }
-              const metaSub = metaParts.length > 0
-                ? `<div style="font-size: 11px; color: #64748B; font-weight: 400; margin-top: 2px;">${metaParts.join(' | ')}</div>`
-                : '';
+              const metaSub =
+                metaParts.length > 0
+                  ? `<div style="font-size: 10.5px; color: #6C5348; margin-top: 2px;">${metaParts.join(
+                      ' | '
+                    )}</div>`
+                  : '';
 
               return `
-              <tr style="border-bottom: 1px solid #E2E8F0;">
-                <td style="padding: 10px 12px; text-align: center; color: #64748B;">${index + 1}</td>
-                <td style="padding: 10px 12px; font-weight: 600; color: #0F172A;">
-                  ${name}
+              <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#FAF7F5'};">
+                <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: center; color: #6C5348; font-weight: 600;">
+                  ${index + 1}
+                </td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8;">
+                  <div style="font-weight: 700; color: #260B00; font-size: 12.5px;">${name}</div>
                   ${metaSub}
                 </td>
-                <td style="padding: 10px 12px; text-align: right; color: #334155;">৳${isNaN(price) ? '0' : price.toLocaleString()}</td>
-                <td style="padding: 10px 12px; text-align: center; font-weight: 600; color: #0F172A;">${qty}</td>
-                <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: #3C1100;">৳${isNaN(lineTotal) ? '0' : lineTotal.toLocaleString()}</td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: right; color: #6C5348;">
+                  ৳ ${isNaN(price) ? '0' : price.toLocaleString()}
+                </td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: center; font-weight: 700; color: #3C1100;">
+                  ${qty}
+                </td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: right; font-weight: 800; color: #3C1100;">
+                  ৳ ${isNaN(lineTotal) ? '0' : lineTotal.toLocaleString()}
+                </td>
               </tr>
             `;
             })
             .join('')
         : `
-          <tr style="border-bottom: 1px solid #E2E8F0;">
-            <td colspan="5" style="padding: 14px 12px; text-align: center; color: #64748B;">Standard Solar Order (${order.order_id || order.id})</td>
+          <tr style="background-color: #ffffff;">
+            <td colspan="5" style="padding: 14px 12px; border-bottom: 1px solid #E8DFD8; text-align: center; color: #6C5348;">
+              Standard Solar Order (#${order.order_id || order.id})
+            </td>
           </tr>
         `;
 
@@ -128,247 +162,496 @@ export const invoiceService = {
         const isDiscount = cost < 0;
         const absCost = Math.abs(cost);
         return `
-        <tr style="border-bottom: 1px solid #E2E8F0; background: ${isDiscount ? '#ECFDF5' : '#FFFBEB'};">
-          <td style="padding: 10px 12px; text-align: center; color: ${isDiscount ? '#059669' : '#D97706'}; font-weight: 700;">${isDiscount ? '-' : '+'}</td>
-          <td style="padding: 10px 12px; color: ${isDiscount ? '#065F46' : '#92400E'}; font-weight: 500;">${ch.name || (isDiscount ? 'Special Discount' : 'Extra Service')}</td>
-          <td style="padding: 10px 12px; text-align: right; color: ${isDiscount ? '#065F46' : '#92400E'};">${isDiscount ? '-' : ''}৳${isNaN(absCost) ? '0' : absCost.toLocaleString()}</td>
-          <td style="padding: 10px 12px; text-align: center; color: ${isDiscount ? '#065F46' : '#92400E'};">1</td>
-          <td style="padding: 10px 12px; text-align: right; font-weight: 700; color: ${isDiscount ? '#059669' : '#92400E'};">${isDiscount ? '-' : ''}৳${isNaN(absCost) ? '0' : absCost.toLocaleString()}</td>
+        <tr style="background-color: ${isDiscount ? '#F0FDF4' : '#FFFDF9'};">
+          <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: center; color: ${
+            isDiscount ? '#059669' : '#D97706'
+          }; font-weight: 800;">
+            ${isDiscount ? '−' : '+'}
+          </td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8;">
+            <div style="font-weight: 700; color: ${
+              isDiscount ? '#065F46' : '#92400E'
+            }; font-size: 12px;">
+              ${ch.name || (isDiscount ? 'Special Discount' : 'Extra Service / Charge')}
+            </div>
+            <div style="font-size: 10px; color: ${
+              isDiscount ? '#059669' : '#B45309'
+            }; margin-top: 1px;">
+              ${isDiscount ? 'Adjustment / Deduction' : 'Adjustment / Extra Fee'}
+            </div>
+          </td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: right; color: ${
+            isDiscount ? '#065F46' : '#92400E'
+          };">
+            ${isDiscount ? '−' : ''}৳ ${isNaN(absCost) ? '0' : absCost.toLocaleString()}
+          </td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: center; font-weight: 700; color: ${
+            isDiscount ? '#065F46' : '#92400E'
+          };">
+            1
+          </td>
+          <td style="padding: 10px 12px; border-bottom: 1px solid #E8DFD8; text-align: right; font-weight: 800; color: ${
+            isDiscount ? '#059669' : '#92400E'
+          };">
+            ${isDiscount ? '− ৳ ' : '+ ৳ '}${isNaN(absCost) ? '0' : absCost.toLocaleString()}
+          </td>
         </tr>
       `;
       })
       .join('');
 
     const totalNumber = Number(order.total || 0);
+    const statusLabel = (order.status || 'pending').toUpperCase();
+    const deliveryInfo = parseDeliveryInfo(order.address);
 
     return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${formatInvoiceFileName(order).replace(/\.pdf$/i, '')}</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-          <style>
-            * { box-sizing: border-box; }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-              color: #0F172A;
-              margin: 0;
-              padding: 24px;
-              background-color: #FFFFFF;
-              font-size: 13px;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              border-bottom: 3px solid #3C1100;
-              padding-bottom: 16px;
-            }
-            .brand-title {
-              font-size: 22px;
-              font-weight: 800;
-              color: #3C1100;
-              letter-spacing: 0.5px;
-              margin: 0;
-            }
-            .brand-sub {
-              font-size: 11px;
-              color: #64748B;
-              margin: 4px 0 0 0;
-            }
-            .company-info {
-              margin-top: 8px;
-              font-size: 11px;
-              color: #334155;
-              line-height: 1.4;
-            }
-            .invoice-tag {
-              text-align: right;
-            }
-            .invoice-badge {
-              display: inline-block;
-              background: #3C1100;
-              color: #FCB974;
-              font-size: 14px;
-              font-weight: 800;
-              padding: 6px 14px;
-              border-radius: 6px;
-              letter-spacing: 1px;
-            }
-            .order-meta {
-              margin-top: 8px;
-              font-size: 12px;
-              color: #334155;
-            }
-            .customer-card {
-              margin: 20px 0;
-              padding: 14px;
-              background-color: #F8FAFC;
-              border: 1px solid #E2E8F0;
-              border-radius: 8px;
-              display: flex;
-              justify-content: space-between;
-            }
-            .customer-col {
-              width: 48%;
-            }
-            .section-label {
-              font-size: 10px;
-              text-transform: uppercase;
-              font-weight: 700;
-              color: #64748B;
-              letter-spacing: 0.5px;
-              margin-bottom: 6px;
-            }
-            .customer-val {
-              font-size: 13px;
-              font-weight: 600;
-              color: #0F172A;
-              margin: 2px 0;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 16px;
-            }
-            th {
-              background-color: #3C1100;
-              color: #FFFFFF;
-              padding: 10px 12px;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .total-section {
-              margin-top: 24px;
-              display: flex;
-              justify-content: flex-end;
-            }
-            .total-box {
-              width: 280px;
-              background: #F8FAFC;
-              border: 1px solid #E2E8F0;
-              border-radius: 8px;
-              padding: 12px 16px;
-            }
-            .total-row {
-              display: flex;
-              justify-content: space-between;
-              padding: 4px 0;
-              font-size: 12px;
-              color: #475569;
-            }
-            .total-grand {
-              display: flex;
-              justify-content: space-between;
-              padding-top: 8px;
-              margin-top: 6px;
-              border-top: 2px solid #3C1100;
-              font-size: 16px;
-              font-weight: 800;
-              color: #3C1100;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 16px;
-              border-top: 1px dashed #CBD5E1;
-              text-align: center;
-              font-size: 11px;
-              color: #64748B;
-              line-height: 1.5;
-            }
-            .status-stamp {
-              display: inline-block;
-              padding: 3px 10px;
-              border-radius: 9999px;
-              font-size: 11px;
-              font-weight: 700;
-              text-transform: uppercase;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <h1 class="brand-title">RADICAL ENGINEERING</h1>
-              <p class="brand-sub">Powering Trusted Solar & Battery Solutions</p>
-              <div class="company-info">
-                <div>📍 1400, Hazi Hasen Ali Market, Station Road, Kishoreganj</div>
-                <div>📞 Hotline: +880 1760195100 | +880 1787224460</div>
-                <div>🌐 radicalengineering.com.bd</div>
-              </div>
-            </div>
-            <div class="invoice-tag">
-              <div class="invoice-badge">INVOICE</div>
-              <div class="order-meta">
-                <div><strong>Order ID:</strong> #${order.order_id || order.id}</div>
-                <div><strong>Date:</strong> ${dateFormatted}</div>
-                <div style="margin-top: 4px;">
-                  <strong>Status:</strong>
-                  <span class="status-stamp" style="background:#FEF3C7; color:#B45309;">${order.status.toUpperCase()}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${formatInvoiceFileName(order).replace(/\.pdf$/i, '')}</title>
+  <!-- Plus Jakarta Sans: Matches Radical Engineering brand typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    @page {
+      size: A4;
+      margin: 12mm 14mm 14mm 14mm;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #260B00;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 0;
+      font-size: 11.5px;
+      line-height: 1.45;
+    }
+    .header-table {
+      width: 100%;
+      border-bottom: 3px solid #3C1100;
+      padding-bottom: 14px;
+      margin-bottom: 4px;
+    }
+    .header-gold-line {
+      height: 3px;
+      background-color: #FCB974;
+      margin-bottom: 16px;
+      border-radius: 2px;
+    }
+    .brand-logo-wrap {
+      margin-bottom: 8px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      font-weight: 700;
+      color: #3C1100;
+      letter-spacing: 0.3px;
+      margin-top: 2px;
+      margin-bottom: 6px;
+    }
+    .company-details {
+      font-size: 10.5px;
+      color: #523A30;
+      line-height: 1.4;
+    }
+    .company-details strong {
+      color: #3C1100;
+    }
+    .badge-doc {
+      display: inline-block;
+      background: #3C1100;
+      color: #FCB974;
+      border: 1.5px solid #FCB974;
+      font-weight: 800;
+      font-size: 11px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .meta-item {
+      font-size: 11px;
+      color: #523A30;
+      margin-bottom: 3px;
+    }
+    .meta-item strong {
+      color: #3C1100;
+    }
+    .status-badge {
+      display: inline-block;
+      background: #F5EBE6;
+      color: #3C1100;
+      border: 1px solid #FCB974;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 800;
+      font-size: 10.5px;
+      text-transform: uppercase;
+    }
+    .summary-grid {
+      display: table;
+      width: 100%;
+      margin-bottom: 16px;
+    }
+    .summary-col {
+      display: table-cell;
+      width: 25%;
+      padding: 10px 12px;
+      background: #FAF7F5;
+      border: 1px solid #E8DFD8;
+      border-right: none;
+      box-sizing: border-box;
+    }
+    .summary-col:last-child {
+      border-right: 1px solid #3C1100;
+      background: #F5EBE6;
+      border-color: #3C1100;
+    }
+    .summary-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      color: #6C5348;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 4px;
+    }
+    .summary-val {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #260B00;
+    }
+    .summary-val.highlight {
+      color: #3C1100;
+      font-size: 15.5px;
+    }
+    .section-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #3C1100;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 14px;
+      margin-bottom: 8px;
+      border-left: 4px solid #FCB974;
+      padding-left: 8px;
+    }
+    .customer-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      border: 1px solid #E8DFD8;
+    }
+    .data-table th {
+      background-color: #3C1100;
+      color: #F6F2ED;
+      font-weight: 700;
+      font-size: 10.5px;
+      padding: 9px 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 2px solid #FCB974;
+    }
+    .store-banner {
+      background: linear-gradient(135deg, #F5EBE6 0%, #FFF8F3 100%);
+      border: 2px solid #3C1100;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+      margin-bottom: 16px;
+    }
+    .store-banner-title {
+      font-size: 13.5px;
+      font-weight: 900;
+      color: #3C1100;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .store-banner-desc {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #523A30;
+      line-height: 1.45;
+      margin-bottom: 8px;
+    }
+    .store-meta-grid {
+      display: table;
+      width: 100%;
+      border-top: 1px dashed #FCB974;
+      padding-top: 6px;
+    }
+    .store-meta-col {
+      display: table-cell;
+      width: 50%;
+      font-size: 10.5px;
+      color: #3C1100;
+    }
+    .footer-table {
+      width: 100%;
+      margin-top: 18px;
+      border-top: 1px solid #E8DFD8;
+      padding-top: 12px;
+      font-size: 10px;
+      color: #6C5348;
+    }
+    .sign-box {
+      text-align: right;
+      padding-top: 28px;
+    }
+    .sign-line {
+      display: inline-block;
+      width: 180px;
+      border-top: 1.5px solid #3C1100;
+      text-align: center;
+      font-weight: 700;
+      color: #3C1100;
+      font-size: 10.5px;
+      padding-top: 4px;
+    }
+  </style>
+</head>
+<body>
 
-          <div class="customer-card">
-            <div class="customer-col">
-              <div class="section-label">Bill To / Customer</div>
-              <div class="customer-val">${order.name || 'Valued Customer'}</div>
-              <div style="color: #475569; margin: 3px 0;">📞 ${order.phone}</div>
-            </div>
-            <div class="customer-col">
-              <div class="section-label">Delivery & Installation Site</div>
-              <div style="color: #334155; line-height: 1.4;">${order.address || 'Standard Delivery'}</div>
-            </div>
-          </div>
+  <!-- BRAND HEADER -->
+  <table class="header-table">
+    <tr>
+      <td style="vertical-align: top; width: 62%;">
+        <div class="brand-logo-wrap">
+          ${formattedLogoSvg}
+        </div>
+        <div class="brand-sub">${APP_CONFIG.tagline}</div>
+        <div class="company-details">
+          <div><strong>Address:</strong> ${APP_CONFIG.address}</div>
+          <div><strong>Hotlines:</strong> ${APP_CONFIG.hotline1} · ${APP_CONFIG.hotline2}</div>
+          <div><strong>WhatsApp:</strong> ${APP_CONFIG.whatsappNumber} &nbsp;|&nbsp; <strong>Email:</strong> ${APP_CONFIG.email}</div>
+          <div><strong>Website:</strong> radicalengineering.com.bd</div>
+        </div>
+      </td>
+      <td style="vertical-align: top; width: 38%; text-align: right;">
+        <div class="badge-doc">OFFICIAL ORDER INVOICE</div>
+        <div class="meta-item"><strong>Invoice Ref:</strong> #${order.order_id || order.id}</div>
+        <div class="meta-item"><strong>Date:</strong> ${dateFormatted}</div>
+        ${
+          deliveryInfo.fulfillmentLabel
+            ? `
+        <div class="meta-item">
+          <strong>Fulfillment:</strong>
+          <span class="status-badge" style="background: ${
+            deliveryInfo.fulfillmentType === 'store_pickup'
+              ? '#FFEDD5'
+              : '#D1FAE5'
+          }; color: ${
+            deliveryInfo.fulfillmentType === 'store_pickup'
+              ? '#9A3412'
+              : '#065F46'
+          }; border-color: ${
+            deliveryInfo.fulfillmentType === 'store_pickup'
+              ? '#FDBA74'
+              : '#6EE7B7'
+          };">${deliveryInfo.fulfillmentLabel.toUpperCase()}</span>
+        </div>`
+            : ''
+        }
+        <div class="meta-item">
+          <strong>Order Status:</strong>
+          <span class="status-badge">${statusLabel}</span>
+        </div>
+      </td>
+    </tr>
+  </table>
+  <div class="header-gold-line"></div>
 
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 40px; text-align: center;">#</th>
-                <th style="text-align: left;">Product Description</th>
-                <th style="width: 90px; text-align: right;">Unit Price</th>
-                <th style="width: 50px; text-align: center;">Qty</th>
-                <th style="width: 100px; text-align: right;">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-              ${extraChargesHtml}
-            </tbody>
+  <!-- TOP SUMMARY METRICS -->
+  <div class="summary-grid">
+    <div class="summary-col">
+      <div class="summary-label">Order Ref</div>
+      <div class="summary-val">#${order.order_id || order.id}</div>
+    </div>
+    <div class="summary-col">
+      <div class="summary-label">Order Date</div>
+      <div class="summary-val">${dateFormatted}</div>
+    </div>
+    <div class="summary-col">
+      <div class="summary-label">Total Items</div>
+      <div class="summary-val">${totalItemsQty} Pcs</div>
+    </div>
+    <div class="summary-col">
+      <div class="summary-label">Payable Total</div>
+      <div class="summary-val highlight">৳ ${totalNumber.toLocaleString()}</div>
+    </div>
+  </div>
+
+  <!-- CUSTOMER & DELIVERY SITE -->
+  <div class="section-title">Customer & Delivery Information</div>
+  <table class="customer-table">
+    <tr>
+      <td style="width: 50%; vertical-align: top; padding: 10px 14px; background: #FAF7F5; border: 1px solid #E8DFD8; border-right: none;">
+        <div class="summary-label">Bill To / Customer</div>
+        <div style="font-size: 13.5px; font-weight: 800; color: #260B00;">${order.name || 'Valued Customer'}</div>
+        <div style="font-size: 11.5px; color: #523A30; margin-top: 4px;">
+          <strong>Phone:</strong> ${order.phone || 'N/A'}
+        </div>
+      </td>
+      <td style="width: 50%; vertical-align: top; padding: 10px 14px; background: #FAF7F5; border: 1px solid #E8DFD8;">
+        <div class="summary-label">
+          ${deliveryInfo.fulfillmentType === 'store_pickup' ? 'Fulfillment & Collection Site' : 'Delivery & Installation Site'}
+        </div>
+        ${
+          deliveryInfo.fulfillmentLabel
+            ? `
+        <div style="margin-bottom: 5px;">
+          <span style="display: inline-block; background: ${
+            deliveryInfo.fulfillmentType === 'store_pickup'
+              ? '#3C1100'
+              : '#065F46'
+          }; color: ${
+            deliveryInfo.fulfillmentType === 'store_pickup'
+              ? '#FCB974'
+              : '#FFFFFF'
+          }; border: 1px solid ${
+            deliveryInfo.fulfillmentType === 'store_pickup'
+              ? '#FCB974'
+              : '#047857'
+          }; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+            ${deliveryInfo.fulfillmentType === 'store_pickup' ? '🏬 STORE PICKUP' : '🚚 HOME DELIVERY'}
+          </span>
+        </div>`
+            : ''
+        }
+        <div style="font-size: 12px; font-weight: 600; color: #3C1100; line-height: 1.45;">
+          ${deliveryInfo.cleanAddress}
+        </div>
+        ${
+          deliveryInfo.specialNotes.length > 0
+            ? `
+        <div style="margin-top: 6px; padding: 5px 8px; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 4px; font-size: 10.5px; color: #92400E; font-weight: 600; line-height: 1.4;">
+          <strong>📝 Special Instructions:</strong> ${deliveryInfo.specialNotes.join(' • ')}
+        </div>`
+            : ''
+        }
+      </td>
+    </tr>
+  </table>
+
+  <!-- SECTION: ORDERED PRODUCTS & CHARGES -->
+  <div class="section-title">Ordered Products & Extra Services</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 35px; text-align: center;">#</th>
+        <th style="text-align: left;">Product / Service Description</th>
+        <th style="width: 100px; text-align: right;">Unit Price</th>
+        <th style="width: 50px; text-align: center;">Qty</th>
+        <th style="width: 120px; text-align: right;">Total Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsHtml}
+      ${extraChargesHtml}
+    </tbody>
+  </table>
+
+  <!-- SUMMARY & FINANCIAL TOTALS -->
+  <table style="width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 16px;">
+    <tr>
+      <td style="width: 52%; vertical-align: top; padding-right: 18px;">
+        <div style="background: #FAF7F5; border: 1px solid #E8DFD8; border-left: 4px solid #3C1100; border-radius: 6px; padding: 12px 14px; font-size: 11px; color: #523A30;">
+          <div style="font-weight: 800; color: #3C1100; margin-bottom: 5px; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.4px;">
+            Official Guarantee & Warranty
+          </div>
+          <div style="margin-bottom: 3px;">• 100% brand-new, genuine components verified by Radical Engineering.</div>
+          <div style="margin-bottom: 3px;">• Covered by official manufacturer brand warranty from delivery date.</div>
+          <div>• Please retain this invoice for receiving priority warranty & after-sales support.</div>
+        </div>
+      </td>
+      <td style="width: 48%; vertical-align: top;">
+        <div style="background: #FAF7F5; border: 1.5px solid #E8DFD8; border-radius: 6px; padding: 12px 16px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+            <tr>
+              <td style="padding: 4px 0; color: #6C5348; font-weight: 600;">Items Subtotal:</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: 700; color: #260B00;">
+                ৳ ${itemsSubtotal.toLocaleString()}
+              </td>
+            </tr>
+            ${
+              positiveExtra > 0
+                ? `
+            <tr>
+              <td style="padding: 4px 0; color: #92400E; font-weight: 600;">Extra Charges & Delivery:</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: 700; color: #92400E;">
+                + ৳ ${positiveExtra.toLocaleString()}
+              </td>
+            </tr>`
+                : ''
+            }
+            ${
+              negativeExtra > 0
+                ? `
+            <tr>
+              <td style="padding: 4px 0; color: #059669; font-weight: 600;">Special Discount:</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: 700; color: #059669;">
+                − ৳ ${negativeExtra.toLocaleString()}
+              </td>
+            </tr>`
+                : ''
+            }
+            <tr style="border-top: 2px solid #3C1100;">
+              <td style="padding: 8px 0 2px 0; font-size: 13px; font-weight: 800; color: #3C1100; text-transform: uppercase;">
+                Payable Grand Total:
+              </td>
+              <td style="padding: 8px 0 2px 0; text-align: right; font-size: 15.5px; font-weight: 900; color: #3C1100;">
+                ৳ ${totalNumber.toLocaleString()}
+              </td>
+            </tr>
           </table>
+        </div>
+      </td>
+    </tr>
+  </table>
 
-          <div class="total-section">
-            <div class="total-box">
-              <div class="total-row">
-                <span>Items Subtotal:</span>
-                <span>৳${itemsSubtotal.toLocaleString()}</span>
-              </div>
-              ${positiveExtra > 0 ? `
-              <div class="total-row">
-                <span>Extra Charges & Delivery:</span>
-                <span>+ ৳${positiveExtra.toLocaleString()}</span>
-              </div>` : ''}
-              ${negativeExtra > 0 ? `
-              <div class="total-row" style="color: #059669; font-weight: 600;">
-                <span>Discount / Deduction:</span>
-                <span>- ৳${negativeExtra.toLocaleString()}</span>
-              </div>` : ''}
-              <div class="total-grand">
-                <span>Grand Total:</span>
-                <span>৳${totalNumber.toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
+  <!-- STORE VISIT INVITATION BANNER -->
+  <div class="store-banner">
+    <div class="store-banner-title">Come at our store to choose the best for you!</div>
+    <div class="store-banner-desc">
+      We invite you to visit our official showroom and engineering center in Kishoreganj. Test live working demonstrations, compare different inverter & battery brands side-by-side, and consult with our certified renewable energy engineers to customize the most reliable and cost-effective system for your home or enterprise.
+    </div>
+    <div class="store-meta-grid">
+      <div class="store-meta-col">
+        <strong>📍 Store Location:</strong> 1400, Hazi Hasen Ali Market, Station Road (opposite Medilab), Kishoreganj
+      </div>
+      <div class="store-meta-col" style="text-align: right;">
+        <strong>🕒 Visiting Hours:</strong> Saturday – Thursday: 9:00 AM – 8:00 PM<br>
+        <strong>📞 Hotline & WhatsApp:</strong> ${APP_CONFIG.hotline1} / ${APP_CONFIG.hotline2}
+      </div>
+    </div>
+  </div>
 
-          <div class="footer">
-            <p>Thank you for choosing <strong>Radical Engineering</strong>! Authorized solar partner across Kishoreganj & Bangladesh.</p>
-            <p>For technical support or warranty inquiry, contact our helpline at <strong>+880 1760195100</strong>.</p>
-          </div>
-        </body>
-      </html>
+  <!-- FOOTER & SIGNATURE -->
+  <table class="footer-table">
+    <tr>
+      <td style="vertical-align: top; width: 60%;">
+        <div>• 100% genuine components backed by official brand warranties.</div>
+        <div>• Thank you for choosing Radical Engineering! Authorized solar & power backup partner.</div>
+        <div>• Generated via Radical Engineering System • radicalengineering.com.bd</div>
+      </td>
+      <td style="vertical-align: top; width: 40%; text-align: right;">
+        <div class="sign-box">
+          <div class="sign-line">Authorized Signatory<br>Radical Engineering</div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
     `;
   },
 
@@ -484,4 +767,3 @@ export const invoiceService = {
     }
   },
 };
-
